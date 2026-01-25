@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useAuth } from "@clerk/nextjs"
 import { WarningWidget } from "@/components/dashboard/WarningWidget"
 import { AISummary } from "@/components/dashboard/SituationSummary"
 import { VideoFeed } from "@/components/dashboard/VideoFeed"
@@ -8,6 +9,9 @@ import { PersonLocator } from "@/components/dashboard/PersonLocator"
 import { useOvershootVision } from "@/app/overshoot"
 
 export default function DashboardPage() {
+  // Get the current user's Clerk ID for SMS alerts
+  const { userId: clerkId } = useAuth()
+  
   const username = "User"
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -15,13 +19,14 @@ export default function DashboardPage() {
   const frameIntervalRef = useRef<number | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
 
+  // Pass clerkId to the overshoot vision hook for user-specific SMS alerts
   const {
     sections,
     overallDangerLevel,
     dangerSince,
     isMonitoring,
     setIsMonitoring,
-  } = useOvershootVision()
+  } = useOvershootVision({ clerkId })
 
   // Handle camera streaming when monitoring starts/stops
   useEffect(() => {

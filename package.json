@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.36.10",
+    "@neondatabase/serverless": "^1.0.2",
     "@overshoot/sdk": "^0.1.0-alpha.2",
     "body-parser": "^2.2.2",
     "dotenv": "^17.2.3",

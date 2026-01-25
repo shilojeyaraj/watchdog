@@ -1,82 +1,67 @@
 // Database connection utility for Neon PostgreSQL
-// This file provides a reusable database client connection
+// Uses @neondatabase/serverless for serverless-friendly connections
 
-import { Client } from 'pg';
+import { neon } from '@neondatabase/serverless';
 
-let client: Client | null = null;
+// Create the SQL query function
+const databaseUrl = process.env.DATABASE_URL;
 
-/**
- * Get or create a database client connection
- * Reuses existing connection if available
- */
-export function getDbClient(): Client {
-  if (!client) {
-    const databaseUrl = process.env.DATABASE_URL;
-    
-    if (!databaseUrl) {
-      throw new Error('DATABASE_URL environment variable is not set');
-    }
-
-    client = new Client({
-      connectionString: databaseUrl,
-    });
-  }
-
-  return client;
+if (!databaseUrl) {
+  console.error('[DB] DATABASE_URL environment variable is not set');
 }
 
+// The neon() function returns a SQL template tag function
+const sql = databaseUrl ? neon(databaseUrl) : null;
+
 /**
- * Execute a query with automatic connection handling
- * Use this for one-off queries
+ * Execute a query using Neon's serverless driver
+ * Compatible with the old pg-style interface
  */
-export async function query<T = any>(
+export async function query<T = Record<string, unknown>>(
   text: string,
-  params?: any[]
+  params?: unknown[]
 ): Promise<{ rows: T[]; rowCount: number }> {
-  const dbClient = getDbClient();
-  
-  // Connect if not already connected
-  if (!dbClient._connected) {
-    await dbClient.connect();
+  if (!sql) {
+    throw new Error('DATABASE_URL environment variable is not set');
   }
 
   try {
-    const result = await dbClient.query(text, params);
+    // Use correct Neon API: sql.query for parameterized queries
+    let result;
+    if (params && params.length > 0) {
+      result = await sql.query(text, params);
+    } else {
+      result = await sql([text][0]); // fallback to tagged template style for no params
+    }
+    // Always return defined rows and rowCount
+    const rows = (result && Array.isArray(result.rows)) ? result.rows as T[] : [];
+    const rowCount = (typeof result?.rowCount === 'number') ? result.rowCount : rows.length;
     return {
-      rows: result.rows as T[],
-      rowCount: result.rowCount || 0,
+      rows,
+      rowCount,
     };
   } catch (error) {
-    console.error('Database query error:', error);
+    if (error && error.message && error.message.includes('can now be called only as a tagged-template function')) {
+      console.error(`[DB] SQL USAGE ERROR: You must use sql\`...\` for tagged templates or sql.query("...", [params]) for parameterized queries. Received: text='${text}', params=${JSON.stringify(params)}`);
+    }
+    console.error('[DB] Query error:', error);
     throw error;
   }
 }
 
 /**
- * Close the database connection
- * Call this when shutting down the application
- */
-export async function closeDb(): Promise<void> {
-  if (client) {
-    await client.end();
-    client = null;
-  }
-}
-
-/**
  * Test database connection
- * Useful for health checks
  */
 export async function testConnection(): Promise<boolean> {
   try {
-    const dbClient = getDbClient();
-    if (!dbClient._connected) {
-      await dbClient.connect();
-    }
-    await dbClient.query('SELECT 1');
+    await query('SELECT 1');
+    console.log('[DB] Connection test successful');
     return true;
   } catch (error) {
-    console.error('Database connection test failed:', error);
+    console.error('[DB] Connection test failed:', error);
     return false;
   }
 }
+
+// Export sql for direct use if needed
+export { sql };
