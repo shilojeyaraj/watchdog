@@ -7,18 +7,34 @@ let client: Client | null = null;
 
 /**
  * Get or create a database client connection
- * Reuses existing connection if available
+ * Reuses existing connection if available and healthy
  */
-export function getDbClient(): Client {
-  if (!client) {
-    const databaseUrl = process.env.DATABASE_URL;
-    
-    if (!databaseUrl) {
-      throw new Error('DATABASE_URL environment variable is not set');
-    }
+function getDbClient(): Client {
+  const databaseUrl = process.env.DATABASE_URL;
+  
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL environment variable is not set');
+  }
 
+  // If client exists but is in error state, close it and create a new one
+  if (client) {
+    // Check if client is in an error state (not queryable)
+    if ((client as any)._ending || (client as any)._connectionError) {
+      console.log('[DB] Client in error state, creating new connection');
+      client = null;
+    }
+  }
+
+  if (!client) {
     client = new Client({
       connectionString: databaseUrl,
+    });
+    
+    // Handle connection errors
+    client.on('error', (err) => {
+      console.error('[DB] Client connection error:', err);
+      // Mark client as errored so we create a new one next time
+      (client as any)._connectionError = true;
     });
   }
 
@@ -26,30 +42,58 @@ export function getDbClient(): Client {
 }
 
 /**
- * Execute a query with automatic connection handling
+ * Execute a query with automatic connection handling and error recovery
  * Use this for one-off queries
  */
 export async function query<T = any>(
   text: string,
   params?: any[]
 ): Promise<{ rows: T[]; rowCount: number }> {
-  const dbClient = getDbClient();
+  let dbClient = getDbClient();
+  let retries = 2; // Try up to 2 times
   
-  // Connect if not already connected
-  if (!dbClient._connected) {
-    await dbClient.connect();
-  }
+  while (retries > 0) {
+    try {
+      // Connect if not already connected
+      if (!dbClient._connected) {
+        await dbClient.connect();
+      }
 
-  try {
-    const result = await dbClient.query(text, params);
-    return {
-      rows: result.rows as T[],
-      rowCount: result.rowCount || 0,
-    };
-  } catch (error) {
-    console.error('Database query error:', error);
-    throw error;
+      const result = await dbClient.query(text, params);
+      return {
+        rows: result.rows as T[],
+        rowCount: result.rowCount || 0,
+      };
+    } catch (error: any) {
+      // Check if it's a connection error
+      const isConnectionError = 
+        error.message?.includes('connection error') ||
+        error.message?.includes('not queryable') ||
+        error.message?.includes('Connection terminated') ||
+        error.code === 'ECONNRESET' ||
+        error.code === 'EPIPE';
+      
+      if (isConnectionError && retries > 1) {
+        console.warn('[DB] Connection error detected, retrying with new connection...', error.message);
+        // Close the broken client
+        try {
+          await dbClient.end();
+        } catch (e) {
+          // Ignore errors when closing
+        }
+        // Reset client to force creation of new one
+        client = null;
+        dbClient = getDbClient();
+        retries--;
+        continue;
+      }
+      
+      console.error('[DB] Database query error:', error);
+      throw error;
+    }
   }
+  
+  throw new Error('Failed to execute query after retries');
 }
 
 /**
@@ -69,11 +113,7 @@ export async function closeDb(): Promise<void> {
  */
 export async function testConnection(): Promise<boolean> {
   try {
-    const dbClient = getDbClient();
-    if (!dbClient._connected) {
-      await dbClient.connect();
-    }
-    await dbClient.query('SELECT 1');
+    await query('SELECT 1');
     return true;
   } catch (error) {
     console.error('Database connection test failed:', error);

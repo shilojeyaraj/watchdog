@@ -12,18 +12,23 @@
     "db:test": "node scripts/test-db-connection.js"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.36.10",
     "@overshoot/sdk": "^0.1.0-alpha.2",
     "body-parser": "^2.2.2",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "leaflet": "^1.9.4",
     "next": "16.1.3",
     "pg": "^8.17.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-leaflet": "^5.0.0",
+    "svix": "^1.84.1",
     "twilio": "^5.11.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20",
     "@types/pg": "^8.16.0",
     "@types/react": "^19",

@@ -10,11 +10,12 @@ export function setFrame(cameraId: string, imageData: string, timestamp: number)
   frameStore.set(cameraId, { imageData, timestamp });
   console.log(`[CAMERA STORE] Frame stored successfully. Total frames in store: ${frameStore.size}`);
   
-  // Clean up old frames (older than 5 seconds)
+  // Clean up old frames (older than 10 seconds - increased to prevent premature cleanup)
+  // This gives VideoFeed enough time to poll and retrieve frames
   const now = Date.now();
   let cleanedCount = 0;
   for (const [key, value] of frameStore.entries()) {
-    if (now - value.timestamp > 5000) {
+    if (now - value.timestamp > 10000) { // Increased from 5000ms to 10000ms (10 seconds)
       frameStore.delete(key);
       cleanedCount++;
       console.log(`[CAMERA STORE] Cleaned up old frame for cameraId: ${key} (age: ${now - value.timestamp}ms)`);

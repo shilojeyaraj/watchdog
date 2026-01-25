@@ -32,6 +32,7 @@ export function VideoFeed({ active, onStreamReady }: VideoFeedProps) {
   const canvasInitializedRef = useRef<boolean>(false)
   const frameCountRef = useRef<number>(0)
   const pollCountRef = useRef<number>(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [hasCamera, setHasCamera] = useState(false)
   
@@ -46,45 +47,67 @@ export function VideoFeed({ active, onStreamReady }: VideoFeedProps) {
   useEffect(() => {
     logVideoFeed('Active state changed', { active })
     
-    if (!active) {
-      logVideoFeed('Deactivating - cleaning up resources')
-      if (pollIntervalRef.current !== null) {
-        clearInterval(pollIntervalRef.current)
-        pollIntervalRef.current = null
-        logVideoFeed('Cleared poll interval')
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop())
-        streamRef.current = null
-        logVideoFeed('Stopped and cleared stream')
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null
-      }
-      canvasInitializedRef.current = false
-      streamCreatedRef.current = false
-      frameCountRef.current = 0
-      pollCountRef.current = 0
-      setIsConnected(false)
-      setHasCamera(false)
-      logVideoFeed('Cleanup complete')
-      return
-    }
+        if (!active) {
+          logVideoFeed('Deactivating - cleaning up resources')
+          // Abort any pending fetch requests
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+            abortControllerRef.current = null
+            logVideoFeed('Aborted pending fetch requests')
+          }
+          if (pollIntervalRef.current !== null) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+            logVideoFeed('Cleared poll interval')
+          }
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach((track) => track.stop())
+            streamRef.current = null
+            logVideoFeed('Stopped and cleared stream')
+          }
+          if (videoRef.current) {
+            videoRef.current.srcObject = null
+          }
+          canvasInitializedRef.current = false
+          streamCreatedRef.current = false
+          frameCountRef.current = 0
+          pollCountRef.current = 0
+          setIsConnected(false)
+          setHasCamera(false)
+          logVideoFeed('Cleanup complete')
+          return
+        }
 
-    let cancelled = false
-    logVideoFeed('Activating - starting frame polling')
+        let cancelled = false
+        logVideoFeed('Activating - starting frame polling')
+        
+        // Create AbortController for this polling session
+        abortControllerRef.current = new AbortController()
 
-    // Poll for frames from API
-    const pollForFrames = async () => {
-      if (cancelled) return
-      
-      pollCountRef.current++
-      const pollNum = pollCountRef.current
+        // Poll for frames from API
+        const pollForFrames = async () => {
+          if (cancelled) return
+          
+          pollCountRef.current++
+          const pollNum = pollCountRef.current
 
-      try {
-        const fetchStart = performance.now()
-        const response = await fetch("/api/camera/frame?cameraId=default")
-        const fetchTime = performance.now() - fetchStart
+          try {
+            const fetchStart = performance.now()
+            const response = await fetch("/api/camera/frame?cameraId=default", {
+              signal: abortControllerRef.current?.signal
+            })
+            const fetchTime = performance.now() - fetchStart
+        
+        if (!response.ok) {
+          if (pollNum % 30 === 1) {
+            logVideoFeed(`Poll #${pollNum}: API error`, {
+              status: response.status,
+              statusText: response.statusText
+            })
+          }
+          return
+        }
+        
         const data = await response.json()
         
         // Log every 30th poll to avoid console spam (roughly once per second at 30fps)
@@ -94,26 +117,40 @@ export function VideoFeed({ active, onStreamReady }: VideoFeedProps) {
             fetchTime: `${fetchTime.toFixed(1)}ms`,
             hasFrame: !!data.frame,
             frameDataLength: data.frame?.imageData?.length || 0,
-            frameTimestamp: data.frame?.timestamp
+            frameTimestamp: data.frame?.timestamp,
+            responseKeys: Object.keys(data)
           })
         }
 
         if (cancelled) return
 
         if (data.frame && data.frame.imageData) {
-          // Check if this is a new frame
-          if (data.frame.timestamp > lastFrameTimestampRef.current) {
+          // Log first frame always
+          if (frameCountRef.current === 0) {
+            logVideoFeed('FIRST FRAME RECEIVED!', {
+              hasImageData: !!data.frame.imageData,
+              imageDataLength: data.frame.imageData?.length || 0,
+              imageDataStart: data.frame.imageData?.substring(0, 30) || 'none',
+              timestamp: data.frame.timestamp
+            })
+          }
+          
+          // Check if this is a new frame (allow same timestamp to handle rapid updates)
+          if (data.frame.timestamp >= lastFrameTimestampRef.current) {
             frameCountRef.current++
             const frameNum = frameCountRef.current
-            const timeSinceLastFrame = data.frame.timestamp - lastFrameTimestampRef.current
+            const timeSinceLastFrame = lastFrameTimestampRef.current > 0 
+              ? data.frame.timestamp - lastFrameTimestampRef.current 
+              : 0
             lastFrameTimestampRef.current = data.frame.timestamp
             
-            // Log every 30th frame
-            if (frameNum % 30 === 1 || frameNum <= 3) {
+            // Log every 30th frame or first few frames
+            if (frameNum % 30 === 1 || frameNum <= 5) {
               logVideoFeed(`New frame #${frameNum}`, {
                 timeSinceLastFrame: `${timeSinceLastFrame}ms`,
                 imageDataLength: data.frame.imageData.length,
-                imageDataPreview: data.frame.imageData.substring(0, 50) + '...'
+                imageDataPreview: data.frame.imageData.substring(0, 50) + '...',
+                timestamp: data.frame.timestamp
               })
             }
 
@@ -242,6 +279,16 @@ export function VideoFeed({ active, onStreamReady }: VideoFeedProps) {
           }
         }
       } catch (error) {
+        // Ignore aborted errors (happens during Fast Refresh/unmount)
+        if (error instanceof Error && error.name === 'AbortError') {
+          logVideoFeed('Poll aborted (component unmounting)', { pollNum })
+          return
+        }
+        // Ignore ECONNRESET errors (happens during Fast Refresh)
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ECONNRESET') {
+          logVideoFeed('Connection reset (Fast Refresh)', { pollNum })
+          return
+        }
         logVideoFeed('ERROR polling for frames', error)
         if (hasCamera) {
           setHasCamera(false)
@@ -254,30 +301,30 @@ export function VideoFeed({ active, onStreamReady }: VideoFeedProps) {
     pollIntervalRef.current = window.setInterval(pollForFrames, 33)
     pollForFrames() // Initial poll
 
-    return () => {
-      cancelled = true
-      if (pollIntervalRef.current !== null) {
-        clearInterval(pollIntervalRef.current)
-        pollIntervalRef.current = null
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop())
-        streamRef.current = null
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null
-      }
-    }
+        return () => {
+          cancelled = true
+          // Abort any pending fetch requests
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+            abortControllerRef.current = null
+          }
+          if (pollIntervalRef.current !== null) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach((track) => track.stop())
+            streamRef.current = null
+          }
+          if (videoRef.current) {
+            videoRef.current.srcObject = null
+          }
+        }
   }, [active, onStreamReady, hasCamera])
 
   return (
     <Card className="h-full min-h-[60vh] sm:min-h-[60vh] flex-1">
       <CardContent className="flex items-center justify-center h-full p-0 relative overflow-hidden">
-        {!hasCamera && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-2xl z-10">
-            <p className="text-white text-xl font-extrabold">Camera Disabled, Video Feed Paused</p>
-          </div>
-        )}
         <video
           ref={videoRef}
           id="camera"
@@ -300,9 +347,15 @@ export function VideoFeed({ active, onStreamReady }: VideoFeedProps) {
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            backgroundColor: '#000'
+            backgroundColor: '#000',
+            zIndex: 1
           }}
         />
+        {!hasCamera && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-2xl z-20 pointer-events-none">
+            <p className="text-white text-xl font-extrabold">Camera Disabled, Video Feed Paused</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

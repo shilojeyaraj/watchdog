@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { parseOvershootResult } from "./parseOvershootResult"
 import type {
   DangerLevel,
@@ -50,6 +50,7 @@ type UseOvershootVisionResult = {
   dangerSince: Date
   isMonitoring: boolean
   setIsMonitoring: (value: boolean | ((prev: boolean) => boolean)) => void
+  setStream: (stream: MediaStream | null) => void
 }
 
 export function useOvershootVision(): UseOvershootVisionResult {
@@ -65,19 +66,50 @@ export function useOvershootVision(): UseOvershootVisionResult {
   const [overallDangerLevel, setOverallDangerLevel] = useState<DangerLevel>("SAFE")
   const [dangerSince, setDangerSince] = useState<Date>(new Date())
   const [isMonitoring, setIsMonitoring] = useState(false)
+  const [stream, setStream] = useState<MediaStream | null>(null)
+  
+  // Use ref to track visions so cleanup can always access them
+  const visionsRef = useRef<OvershootVisionInstance[]>([])
 
   useEffect(() => {
-    if (!isMonitoring) {
+    // CRITICAL: Stop all existing instances FIRST before creating new ones
+    const stopAllVisions = async () => {
+      const visions = visionsRef.current
+      if (visions.length > 0) {
+        console.log(`[RealtimeVision] Stopping ${visions.length} existing vision instances...`)
+        await Promise.all(
+          visions.map(vision => 
+            vision.stop().catch((err) => {
+              console.error('[RealtimeVision] Error stopping vision:', err)
+            })
+          )
+        )
+        visionsRef.current = []
+        // Small delay to ensure streams are fully closed
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+    }
+
+    if (!isMonitoring || !stream) {
+      // Stop all visions when monitoring stops or stream is not available
+      stopAllVisions()
       return
     }
 
     let cancelled = false
-    const visions: OvershootVisionInstance[] = []
 
     async function run() {
+      // Stop any existing instances first
+      await stopAllVisions()
+
+      if (cancelled) {
+        return
+      }
+
       const apiKey = process.env.NEXT_PUBLIC_OVERSHOOT_API_KEY
 
       if (!apiKey) {
+        console.error('[RealtimeVision] API key not found')
         return
       }
 
@@ -90,81 +122,106 @@ export function useOvershootVision(): UseOvershootVisionResult {
       }
 
       const { RealtimeVision } = sdkModule
-
       const sectionKeys = ['farthest', 'middle', 'closest'] as const
+      const newVisions: OvershootVisionInstance[] = []
 
       // Create and start 3 separate instances
       for (const section of sectionKeys) {
         if (cancelled) {
-          break
+          // Stop any instances we've created so far
+          for (const vision of newVisions) {
+            await vision.stop().catch(() => {})
+          }
+          return
         }
 
-        const instance = new RealtimeVision({
-          apiUrl: "https://cluster1.overshoot.ai/api/v0.2",
-          apiKey,
-          prompt: SECTION_PROMPTS[section],
-          onResult: (result: OvershootResult) => {
-            if (cancelled) {
-              return
-            }
-
-            const text =
-              typeof result.result === "string" ? result.result : ""
-
-            if (!text.trim()) {
-              return
-            }
-
-            const parsed = parseOvershootResult(text)
-
-            if (!parsed) {
-              return
-            }
-
-            console.log(`${section} section description:`, parsed.summary)
-
-            setSections(prev => ({
-              ...prev,
-              [section]: {
-                summary: parsed.summary,
-                grid: parsed.grid,
-                level: parsed.level,
-                rawText: text,
+        try {
+          const instance = new RealtimeVision({
+            apiUrl: "https://cluster1.overshoot.ai/api/v0.2",
+            apiKey,
+            prompt: SECTION_PROMPTS[section],
+            onResult: (result: OvershootResult) => {
+              if (cancelled) {
+                return
               }
-            }))
 
-            // Update overall danger level based on the highest danger level across sections
-            setSections(currentSections => {
-              const allLevels = Object.values(currentSections)
-                .filter(s => s !== null)
-                .map(s => s!.level)
+              const text =
+                typeof result.result === "string" ? result.result : ""
 
-              const highestLevel = allLevels.includes("DANGER") ? "DANGER" :
-                                 allLevels.includes("WARNING") ? "WARNING" : "SAFE"
+              if (!text.trim()) {
+                return
+              }
 
-              setOverallDangerLevel(highestLevel)
-              setDangerSince(new Date())
+              const parsed = parseOvershootResult(text)
 
-              return currentSections
-            })
-          },
-        })
+              if (!parsed) {
+                return
+              }
 
-        visions.push(instance)
-        await instance.start()
+              console.log(`${section} section description:`, parsed.summary)
+
+              setSections(prev => ({
+                ...prev,
+                [section]: {
+                  summary: parsed.summary,
+                  grid: parsed.grid,
+                  level: parsed.level,
+                  rawText: text,
+                }
+              }))
+
+              // Update overall danger level based on the highest danger level across sections
+              setSections(currentSections => {
+                const allLevels = Object.values(currentSections)
+                  .filter(s => s !== null)
+                  .map(s => s!.level)
+
+                const highestLevel = allLevels.includes("DANGER") ? "DANGER" :
+                                   allLevels.includes("WARNING") ? "WARNING" : "SAFE"
+
+                setOverallDangerLevel(highestLevel)
+                setDangerSince(new Date())
+
+                return currentSections
+              })
+            },
+          })
+
+          newVisions.push(instance)
+          // Pass the stream to start() - this is required!
+          await instance.start(stream)
+          console.log(`[RealtimeVision] Started ${section} instance`)
+        } catch (error) {
+          console.error(`[RealtimeVision] Error creating/starting ${section} instance:`, error)
+          // Stop all instances we've created so far if one fails
+          for (const vision of newVisions) {
+            try {
+              await vision.stop()
+            } catch (e) {
+              // Ignore errors
+            }
+          }
+          return
+        }
+      }
+
+      // Only update ref if we successfully created all instances
+      if (!cancelled && newVisions.length === 3) {
+        visionsRef.current = newVisions
+        console.log('[RealtimeVision] All 3 vision instances started successfully')
       }
     }
 
-    run()
+    run().catch((error) => {
+      console.error('[RealtimeVision] Fatal error:', error)
+    })
 
     return () => {
       cancelled = true
-
-      for (const vision of visions) {
-        vision.stop().catch(() => {})
-      }
+      // CRITICAL: Stop all vision instances to free up stream slots
+      stopAllVisions()
     }
-  }, [isMonitoring])
+  }, [isMonitoring, stream])
 
   return {
     sections,
@@ -172,5 +229,6 @@ export function useOvershootVision(): UseOvershootVisionResult {
     dangerSince,
     isMonitoring,
     setIsMonitoring,
+    setStream,
   }
 }
