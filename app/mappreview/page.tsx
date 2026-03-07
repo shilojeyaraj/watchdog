@@ -3,12 +3,9 @@
 import { useEffect, useState, useRef } from "react"
 import dynamic from "next/dynamic"
 
-// Import Leaflet CSS and fix marker icon paths - must be done client-side
+// Fix Leaflet marker icon paths - must be done client-side
+// Note: Leaflet CSS is already imported in app/globals.css
 if (typeof window !== "undefined") {
-  import("leaflet/dist/leaflet.css").catch((err) => {
-    console.error("[MapPreview] Failed to load Leaflet CSS:", err)
-  })
-  
   // Fix Leaflet marker icon paths for Next.js (common issue)
   import("leaflet").then((L) => {
     delete (L.default.Icon.Default.prototype as any)._getIconUrl
@@ -65,18 +62,6 @@ export default function MapPreviewPage() {
     if (!isClient) return
 
     const getLocation = async () => {
-      if (navigator.geolocation) {
-        console.log("[MapPreview] Requesting high-accuracy browser geolocation...")
-        
-        // Clear any existing watch
-        if (watchIdRef.current !== null) {
-          navigator.geolocation.clearWatch(watchIdRef.current)
-          watchIdRef.current = null
-        }
-        
-        // Reset position readings
-        positionReadingsRef.current = []
-        
         // Helper function for reverse geocoding
         const reverseGeocode = (lat: number, lng: number) => {
           console.log("[MapPreview] 📍 Requesting reverse geocode for coordinates:", { lat, lng })
@@ -148,7 +133,7 @@ export default function MapPreviewPage() {
           try {
             const response = await fetch('/api/geolocation')
             const data = await response.json()
-            
+
             if (data.success && data.lat && data.lng) {
               console.log("[MapPreview] IP geolocation success:", {
                 lat: data.lat,
@@ -166,7 +151,19 @@ export default function MapPreviewPage() {
             console.error("[MapPreview] IP geolocation error:", error)
           }
         }
-        
+
+      if (navigator.geolocation) {
+        console.log("[MapPreview] Requesting high-accuracy browser geolocation...")
+
+        // Clear any existing watch
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current)
+          watchIdRef.current = null
+        }
+
+        // Reset position readings
+        positionReadingsRef.current = []
+
         // Use watchPosition for continuous updates (better accuracy over time)
         watchIdRef.current = navigator.geolocation.watchPosition(
           (position) => {
@@ -402,98 +399,6 @@ export default function MapPreviewPage() {
               }}
               scrollWheelZoom={true}
               className="leaflet-container-custom"
-              whenCreated={(map) => {
-                const center = map.getCenter()
-                const zoom = map.getZoom()
-                
-                console.log("[MapPreview] ===== MAP CREATED =====")
-                console.log("[MapPreview] Map center (lat, lng):", {
-                  lat: center.lat,
-                  lng: center.lng,
-                  formatted: `${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`
-                })
-                console.log("[MapPreview] Map zoom level:", zoom)
-                console.log("[MapPreview] Expected location:", {
-                  expected: mapCenter,
-                  formatted: `${mapCenter[0].toFixed(6)}, ${mapCenter[1].toFixed(6)}`
-                })
-                
-                // IMPORTANT: Leaflet uses [lat, lng] format
-                // Check if coordinates might be swapped
-                if (Math.abs(center.lat - mapCenter[0]) > 0.1 || Math.abs(center.lng - mapCenter[1]) > 0.1) {
-                  console.warn("[MapPreview] ⚠️ COORDINATE MISMATCH!")
-                  console.warn("[MapPreview] Expected:", mapCenter)
-                  console.warn("[MapPreview] Actual:", [center.lat, center.lng])
-                  console.warn("[MapPreview] If coordinates are swapped, Leaflet expects [latitude, longitude]")
-                }
-                
-                // Force invalidateSize to ensure tiles load
-                setTimeout(() => {
-                  map.invalidateSize()
-                  
-                  // Check tiles and their URLs
-                  const container = map.getContainer()
-                  const tiles = container.querySelectorAll('.leaflet-tile-container img')
-                  console.log("[MapPreview] ===== TILE INFORMATION =====")
-                  console.log("[MapPreview] Number of tiles loaded:", tiles.length)
-                  
-                  if (tiles.length > 0) {
-                    // Extract tile coordinates from URLs
-                    // URL format: https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
-                    const tileInfo: Array<{ url: string; z: number; x: number; y: number }> = []
-                    
-                    tiles.forEach((tile, idx) => {
-                      const tileEl = tile as HTMLImageElement
-                      const url = tileEl.src
-                      
-                      // Extract z, x, y from URL
-                      const match = url.match(/\/\/(\d+)\/(\d+)\/(\d+)\.png/)
-                      if (match) {
-                        const [, z, x, y] = match.map(Number)
-                        tileInfo.push({ url, z, x, y })
-                      }
-                      
-                      if (idx < 3) { // Log first 3 tiles
-                        console.log(`[MapPreview] Tile ${idx}:`, {
-                          url: url.substring(0, 80) + '...',
-                          complete: tileEl.complete,
-                          naturalWidth: tileEl.naturalWidth,
-                          naturalHeight: tileEl.naturalHeight,
-                        })
-                      }
-                    })
-                    
-                    if (tileInfo.length > 0) {
-                      console.log("[MapPreview] Tile coordinates (z/x/y):", tileInfo.slice(0, 5))
-                      console.log("[MapPreview] Zoom level from tiles:", tileInfo[0]?.z)
-                      console.log("[MapPreview] Tile X range:", {
-                        min: Math.min(...tileInfo.map(t => t.x)),
-                        max: Math.max(...tileInfo.map(t => t.x))
-                      })
-                      console.log("[MapPreview] Tile Y range:", {
-                        min: Math.min(...tileInfo.map(t => t.y)),
-                        max: Math.max(...tileInfo.map(t => t.y))
-                      })
-                    }
-                  }
-                  
-                  // Verify map center matches what we set
-                  const currentCenter = map.getCenter()
-                  console.log("[MapPreview] ===== VERIFICATION =====")
-                  console.log("[MapPreview] Current map center:", {
-                    lat: currentCenter.lat.toFixed(6),
-                    lng: currentCenter.lng.toFixed(6)
-                  })
-                  console.log("[MapPreview] Expected center:", {
-                    lat: mapCenter[0].toFixed(6),
-                    lng: mapCenter[1].toFixed(6)
-                  })
-                  
-                  // Check if you can see the location on OpenStreetMap
-                  const osmUrl = `https://www.openstreetmap.org/?mlat=${mapCenter[0]}&mlon=${mapCenter[1]}&zoom=${zoom}`
-                  console.log("[MapPreview] View this location on OpenStreetMap:", osmUrl)
-                }, 500)
-              }}
             >
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

@@ -11,7 +11,7 @@ export type OvershootResult = {
 }
 
 export type OvershootVisionInstance = {
-  start: () => Promise<void>
+  start: (stream?: MediaStream | null) => Promise<void>
   stop: () => Promise<void>
 }
 

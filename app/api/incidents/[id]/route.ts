@@ -9,12 +9,14 @@ import { getIncidentById, updateIncidentStatus } from '@/lib/db-incidents';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+
     // Get authenticated user
     const { userId: clerkId } = await auth();
-    
+
     if (!clerkId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -30,7 +32,7 @@ export async function GET(
       );
     }
 
-    const incident = await getIncidentById(params.id);
+    const incident = await getIncidentById(id);
 
     if (!incident) {
       return NextResponse.json(
@@ -67,12 +69,14 @@ export async function GET(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+
     // Get authenticated user
     const { userId: clerkId } = await auth();
-    
+
     if (!clerkId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -88,7 +92,7 @@ export async function PATCH(
       );
     }
 
-    const incident = await getIncidentById(params.id);
+    const incident = await getIncidentById(id);
 
     if (!incident) {
       return NextResponse.json(
@@ -115,9 +119,9 @@ export async function PATCH(
       );
     }
 
-    await updateIncidentStatus(params.id, status, resolutionNotes);
+    await updateIncidentStatus(id, status, resolutionNotes);
 
-    const updatedIncident = await getIncidentById(params.id);
+    const updatedIncident = await getIncidentById(id);
 
     return NextResponse.json({
       success: true,

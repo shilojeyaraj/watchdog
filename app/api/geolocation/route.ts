@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     // Get client IP from request headers
     const forwarded = request.headers.get('x-forwarded-for');
     const realIp = request.headers.get('x-real-ip');
-    const clientIp = forwarded?.split(',')[0] || realIp || request.ip || '';
+    const clientIp = forwarded?.split(',')[0] || realIp || '';
 
     console.log('[Geolocation API] Client IP:', clientIp);
 

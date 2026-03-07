@@ -4,6 +4,7 @@
 import { Client } from 'pg';
 
 let client: Client | null = null;
+let isConnected = false;
 
 /**
  * Get or create a database client connection
@@ -29,12 +30,13 @@ function getDbClient(): Client {
     client = new Client({
       connectionString: databaseUrl,
     });
-    
+    isConnected = false;
+
     // Handle connection errors
     client.on('error', (err) => {
       console.error('[DB] Client connection error:', err);
-      // Mark client as errored so we create a new one next time
       (client as any)._connectionError = true;
+      isConnected = false;
     });
   }
 
@@ -55,8 +57,9 @@ export async function query<T = any>(
   while (retries > 0) {
     try {
       // Connect if not already connected
-      if (!dbClient._connected) {
+      if (!isConnected) {
         await dbClient.connect();
+        isConnected = true;
       }
 
       const result = await dbClient.query(text, params);
@@ -83,6 +86,7 @@ export async function query<T = any>(
         }
         // Reset client to force creation of new one
         client = null;
+        isConnected = false;
         dbClient = getDbClient();
         retries--;
         continue;
@@ -104,6 +108,7 @@ export async function closeDb(): Promise<void> {
   if (client) {
     await client.end();
     client = null;
+    isConnected = false;
   }
 }
 
