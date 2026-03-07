@@ -63,11 +63,9 @@ export async function POST(request: NextRequest) {
         }
         
         // Build the alert message
-        const alertMessage = `🚨 WATCHDOG ALERT 🚨\n\n` +
-          `Threat Level: ${dangerLevel}\n\n` +
-          `${description || 'Potential threat detected'}\n\n` +
-          `Time: ${new Date().toLocaleString()}\n\n` +
-          `Reply:\n"1" - More details\n"2" - View image`;
+        const shortDesc = (description || 'Potential threat detected').slice(0, 100);
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const alertMessage = `WATCHDOG ALERT\nLevel: ${dangerLevel}\n${shortDesc}\n${time}`;
         
         console.log('[SMS ALERT API] Sending alert to user:', clerkId);
         

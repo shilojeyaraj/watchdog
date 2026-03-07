@@ -1,6 +1,19 @@
 {
-  "consecutiveDangerCount": 1,
-  "lastAlertSentTime": null,
+  "consecutiveDangerCount": 9,
+  "lastAlertSentTime": 1772919931006,
   "lastDangerLevel": "DANGER",
-  "alertHistory": []
+  "alertHistory": [
+    {
+      "timestamp": 1772918954607,
+      "dangerLevel": "DANGER",
+      "description": "One person has hands on their neck, indicating distress or potential choking. One person has hand on neck, indicating distress or potential choking. One person in the farthest section has hands on their neck, indicating distress caused by another person.",
+      "reason": "initial"
+    },
+    {
+      "timestamp": 1772919931006,
+      "dangerLevel": "DANGER",
+      "description": "One person is holding their neck, indicating distress or potential physical harm. A person is standing calmly in front of bookshelves, making no aggressive gestures or signs of distress. No signs of aggression or distress in the farthest section of the room.",
+      "reason": "initial"
+    }
+  ]
 }

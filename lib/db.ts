@@ -31,11 +31,16 @@ export async function query<T = Record<string, unknown>>(
     if (params && params.length > 0) {
       result = await sql.query(text, params);
     } else {
-      result = await sql([text][0]); // fallback to tagged template style for no params
+      result = await sql.query(text);
     }
-    // Always return defined rows and rowCount
-    const rows = (result && Array.isArray(result.rows)) ? result.rows as T[] : [];
-    const rowCount = (typeof result?.rowCount === 'number') ? result.rowCount : rows.length;
+    // Neon v1.x sql.query() returns rows as a plain array (T[]), not { rows, rowCount }
+    // Handle both shapes for safety
+    const rows = Array.isArray(result)
+      ? result as T[]
+      : (result && Array.isArray(result.rows)) ? result.rows as T[] : [];
+    const rowCount = Array.isArray(result)
+      ? result.length
+      : (typeof result?.rowCount === 'number') ? result.rowCount : rows.length;
     return {
       rows,
       rowCount,
