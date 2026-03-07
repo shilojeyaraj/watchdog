@@ -3,8 +3,10 @@ import path from 'path';
 
 interface SMSState {
   consecutiveDangerCount: number;
+  consecutiveIncidentCount: number; // Track consecutive detections for incident creation (requires 4)
   lastAlertSentTime: number | null;
   lastDangerLevel: string | null;
+  lastIncidentDangerLevel: string | null; // Track last danger level for incident tracking
   alertHistory: AlertRecord[];
 }
 
@@ -21,8 +23,10 @@ const STATE_FILE = path.join(process.cwd(), '.sms-state.json');
 // In-memory state
 let state: SMSState = {
   consecutiveDangerCount: 0,
+  consecutiveIncidentCount: 0,
   lastAlertSentTime: null,
   lastDangerLevel: null,
+  lastIncidentDangerLevel: null,
   alertHistory: [],
 };
 
@@ -76,6 +80,58 @@ export function updateDangerLevel(dangerLevel: string): number {
   persistState();
 
   return state.consecutiveDangerCount;
+}
+
+/**
+ * Update consecutive incident count (for WARNING and DANGER)
+ * Requires 4 consecutive detections before creating an incident
+ * @param dangerLevel - Current danger level: 'SAFE', 'WARNING', or 'DANGER'
+ * @returns The updated consecutive incident count
+ */
+export function updateIncidentCount(dangerLevel: string): number {
+  // Only track WARNING and DANGER for incidents
+  if (dangerLevel === 'WARNING' || dangerLevel === 'DANGER') {
+    if (state.lastIncidentDangerLevel === dangerLevel) {
+      // Continue the streak for same danger level
+      state.consecutiveIncidentCount++;
+    } else {
+      // Different danger level or first detection - start new streak
+      state.consecutiveIncidentCount = 1;
+    }
+    state.lastIncidentDangerLevel = dangerLevel;
+  } else {
+    // SAFE resets the count
+    state.consecutiveIncidentCount = 0;
+    state.lastIncidentDangerLevel = null;
+  }
+
+  persistState();
+  return state.consecutiveIncidentCount;
+}
+
+/**
+ * Check if enough consecutive detections have occurred to create an incident
+ * Requires 4 consecutive WARNING or DANGER detections
+ * @returns True if we've had 4+ consecutive detections
+ */
+export function shouldCreateIncident(): boolean {
+  return state.consecutiveIncidentCount >= 4;
+}
+
+/**
+ * Get consecutive incident count
+ */
+export function getConsecutiveIncidentCount(): number {
+  return state.consecutiveIncidentCount;
+}
+
+/**
+ * Reset incident count (call after creating an incident to prevent duplicates)
+ */
+export function resetIncidentCount() {
+  state.consecutiveIncidentCount = 0;
+  state.lastIncidentDangerLevel = null;
+  persistState();
 }
 
 /**
@@ -136,8 +192,10 @@ export function getState(): SMSState {
 export function resetState() {
   state = {
     consecutiveDangerCount: 0,
+    consecutiveIncidentCount: 0,
     lastAlertSentTime: null,
     lastDangerLevel: null,
+    lastIncidentDangerLevel: null,
     alertHistory: [],
   };
   persistState();

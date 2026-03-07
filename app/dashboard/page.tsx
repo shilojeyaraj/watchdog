@@ -5,7 +5,7 @@ import { useAuth } from "@clerk/nextjs"
 import { WarningWidget } from "@/components/dashboard/WarningWidget"
 import { AISummary } from "@/components/dashboard/SituationSummary"
 import { VideoFeed } from "@/components/dashboard/VideoFeed"
-import { PersonLocator } from "@/components/dashboard/PersonLocator"
+import { EventMap } from "@/components/dashboard/EventMap"
 import { useOvershootVision } from "@/app/overshoot"
 
 export default function DashboardPage() {
@@ -27,6 +27,22 @@ export default function DashboardPage() {
     isMonitoring,
     setIsMonitoring,
   } = useOvershootVision({ clerkId })
+
+  // Pass stream to Overshoot when VideoFeed provides it
+  useEffect(() => {
+    if (remoteStream) {
+      setOvershootStream(remoteStream)
+    } else {
+      setOvershootStream(null)
+    }
+  }, [remoteStream, setOvershootStream])
+
+  // Redirect if not signed in
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/sign-in')
+    }
+  }, [isLoaded, isSignedIn, router])
 
   // Handle camera streaming when monitoring starts/stops
   useEffect(() => {
@@ -72,6 +88,11 @@ export default function DashboardPage() {
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           console.log('[DASHBOARD] Stream attached to video element')
+          
+          // Play the video to ensure it starts
+          videoRef.current.play().catch((err) => {
+            console.error('[DASHBOARD] Error playing video:', err)
+          })
           
           // Wait for video to be ready before capturing frames
           videoRef.current.onloadedmetadata = () => {
@@ -186,6 +207,21 @@ export default function DashboardPage() {
     }
   }, [])
 
+  // Show loading while checking auth (AFTER all hooks)
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-foreground">Loading...</p>
+      </div>
+    )
+  }
+
+  if (!isSignedIn) {
+    return null // Will redirect
+  }
+
+  const username = user?.firstName || user?.username || "User"
+
   // Map medium or high level dangers directly to the 10x10 grid coordinates
   const combinedPersonGrid = Array.from({ length: 10 }, (_, row) =>
     Array.from({ length: 10 }, (_, col) => {
@@ -265,7 +301,7 @@ export default function DashboardPage() {
               {isMonitoring ? "Stop Monitoring" : "Start Monitoring"}
             </button>
           </div>
-          <PersonLocator grid={combinedPersonGrid} />
+          <EventMap grid={combinedPersonGrid} isMonitoring={isMonitoring} />
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeState, updateDangerLevel, shouldTriggerAlert, isThrottled, recordAlertSent } from '@/app/sms/smsState';
+import { auth } from '@clerk/nextjs/server';
+import { initializeState, updateDangerLevel, updateIncidentCount, shouldTriggerAlert, shouldCreateIncident, isThrottled, recordAlertSent, resetIncidentCount } from '@/app/sms/smsState';
 import { sendInitialAlertSMS } from '@/app/sms/automated_message';
 import { sendAlertToUser, isInCooldown, getCooldownRemaining } from '@/lib/twilio';
 
@@ -9,6 +10,19 @@ export async function POST(request: NextRequest) {
   try {
     // Initialize state on first run
     initializeState();
+
+    // Get authenticated user (optional - events can be stored without user)
+    let userId: string | null = null;
+    try {
+      const { userId: clerkId } = await auth();
+      if (clerkId) {
+        const user = await getUserByClerkId(clerkId);
+        userId = user?.id || null;
+      }
+    } catch (error) {
+      // Auth is optional for this endpoint
+      console.log('[SMS Alert API] No authenticated user, storing as system event');
+    }
 
     const body = await request.json();
     const { dangerLevel, description, clerkId } = body;
@@ -108,7 +122,9 @@ export async function POST(request: NextRequest) {
           success: false,
           message: 'Alert throttled - will not send another alert within 1 minute',
           consecutiveCount,
+          consecutiveIncidentCount,
           throttled: true,
+          eventId,
         },
         { status: 429 }
       );
@@ -119,6 +135,8 @@ export async function POST(request: NextRequest) {
           success: false,
           message: 'Not enough consecutive DANGER events to trigger alert',
           consecutiveCount,
+          consecutiveIncidentCount,
+          eventId,
         },
         { status: 200 }
       );

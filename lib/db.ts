@@ -52,6 +52,8 @@ export async function query<T = Record<string, unknown>>(
     console.error('[DB] Query error:', error);
     throw error;
   }
+  
+  throw new Error('Failed to execute query after retries');
 }
 
 /**
