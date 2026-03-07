@@ -385,3 +385,259 @@ Replaced the placeholder login form with Clerk authentication service for real u
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
 ```
+
+---
+
+### Multi-User Twilio SMS Alert System
+
+**Files Created:**
+- `lib/db/users.ts` - Database queries for user data
+- `lib/db/alerts.ts` - Database queries for alert records
+- `lib/db/sync-user.ts` - Sync Clerk users to Neon database
+- `lib/twilio.ts` - New Twilio service with multi-user support
+- `migrations/011_alert_records_enhancements.sql` - Database migration
+
+**Files Modified:**
+- `app/api/sms/alert/route.ts` - Updated to support multi-user alerts
+
+**Purpose:**  
+Replaced the single-recipient hardcoded SMS alert system with a multi-user system that fetches phone numbers from the Neon database. Each user can now receive personalized alerts based on their preferences.
+
+#### Problems Solved:
+
+| Issue | Before | After |
+|-------|--------|-------|
+| Single recipient | `TWILIO_TO_NUMBER` env var | Fetches from `users` table |
+| No user preferences | Everyone gets all alerts | Respects `sms_alerts_enabled` and `alert_threshold` |
+| In-memory state | Cooldown resets on restart | Cooldown stored in `alert_records` |
+| No audit trail | Alerts not logged | All alerts logged with status |
+| No Clerk integration | Manual phone numbers | Auto-syncs from Clerk |
+
+#### New Files Explained:
+
+**1. `lib/db/users.ts`** - User Database Queries
+```typescript
+// Key functions:
+getUserByClerkId(clerkId)      // Get user by Clerk ID
+getUserById(userId)             // Get user by internal UUID
+getUsersForAlert(severity)      // Get all users eligible for an alert
+updateUserPhoneNumber(...)      // Update phone number
+updateUserAlertPreferences(...) // Update SMS/email preferences
+```
+
+**2. `lib/db/alerts.ts`** - Alert Records Queries
+```typescript
+// Key functions:
+logAlert(alert)                 // Log an alert to database
+getLastAlertTime(userId)        // For cooldown calculations
+isUserInCooldown(userId, ms)    // Check if user is in cooldown
+getRecentAlerts(userId, limit)  // Get user's recent alerts
+getAlertStats(userId, days)     // Get alert statistics
+```
+
+**3. `lib/db/sync-user.ts`** - Clerk to Neon Sync
+```typescript
+// Key functions:
+syncCurrentUser()               // Sync logged-in user to database
+getUserIdFromClerk(clerkId)     // Convert Clerk ID to internal ID
+ensureUserExists(clerkId, email)// Create user if not exists
+```
+
+**4. `lib/twilio.ts`** - Multi-User Twilio Service
+```typescript
+// Key functions:
+sendAlert(options)              // Send to all eligible users
+sendDirectSMS(to, body, userId) // Send to specific number
+checkGlobalCooldown()           // Check system-wide cooldown
+
+// Options for sendAlert:
+{
+  severity: 'WARNING' | 'DANGER',
+  message: string,
+  description?: string,
+  cameraId?: string,
+  clerkId?: string  // Optional: send to specific user only
+}
+```
+
+#### Alert Flow Diagram:
+
+```
+Danger Detected
+      │
+      ▼
+┌─────────────────────┐
+│ POST /api/sms/alert │
+│   dangerLevel       │
+│   description       │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Check consecutive   │
+│ danger count >= 3   │
+└──────────┬──────────┘
+           │ Yes
+           ▼
+┌─────────────────────┐     ┌─────────────────────┐
+│ getUsersForAlert()  │────▶│  Neon Database      │
+│ (from lib/twilio)   │     │  users table        │
+└──────────┬──────────┘     └─────────────────────┘
+           │
+           ▼
+    For each user:
+           │
+           ▼
+┌─────────────────────┐
+│ Check:              │
+│ - sms_alerts_enabled│
+│ - has phone_number  │
+│ - alert_threshold   │
+│ - cooldown period   │
+└──────────┬──────────┘
+           │ Pass
+           ▼
+┌─────────────────────┐     ┌─────────────────────┐
+│ Twilio API          │────▶│ SMS to user's phone │
+│ messages.create()   │     └─────────────────────┘
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐     ┌─────────────────────┐
+│ logAlert()          │────▶│ alert_records table │
+└─────────────────────┘     └─────────────────────┘
+```
+
+#### Database Migration (011):
+
+Adds columns to `alert_records`:
+- `user_id` - Links to users table
+- `phone_number` - Number alert was sent to
+- `twilio_sid` - Twilio message ID
+- `status` - sent/failed/skipped/cooldown
+
+#### Environment Variables:
+
+```env
+# Existing (still required)
+TWILIO_ACCOUNT_SID=your_account_sid
+TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_FROM_NUMBER=+1234567890
+
+# New feature flag (enable multi-user system)
+USE_MULTI_USER_ALERTS=true
+
+# Can remove (no longer needed with multi-user)
+# TWILIO_TO_NUMBER=+1234567890
+```
+
+#### How to Enable:
+
+1. Run the migration:
+   ```bash
+   node migrations/run-migrations.js
+   ```
+
+2. Add the feature flag to `.env.local`:
+   ```env
+   USE_MULTI_USER_ALERTS=true
+   ```
+
+3. Ensure users have phone numbers in the database (synced from Clerk or manually added)
+
+4. Users can configure their preferences:
+   - `sms_alerts_enabled`: true/false
+   - `alert_threshold`: 'WARNING' or 'DANGER'
+
+---
+
+### SMS System Simplification (Final Implementation)
+
+**Date:** January 25, 2026
+
+**Files Modified:**
+- `lib/twilio.ts` - Completely rewritten for simplified flow
+- `app/api/sms/alert/route.ts` - Updated to use new sendAlert signature
+
+**Purpose:**  
+Simplified the multi-user SMS system to work within Twilio trial account limitations (5 verified phone numbers). The system now queries the Neon database directly for eligible users without complex dependency chains.
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     SMS ALERT FLOW                              │
+│                                                                 │
+│  1. Threat Detected (Overshoot AI)                             │
+│            ↓                                                    │
+│  2. POST /api/sms/alert                                        │
+│            ↓                                                    │
+│  3. Check consecutive danger count (≥3 required)               │
+│            ↓                                                    │
+│  4. sendAlert(severity, message)                               │
+│            ↓                                                    │
+│  5. Query Neon DB for eligible users:                          │
+│     - sms_alerts_enabled = true                                │
+│     - phone_number IS NOT NULL                                 │
+│     - severity matches alert_threshold                         │
+│            ↓                                                    │
+│  6. Send SMS to each user via Twilio                           │
+│            ↓                                                    │
+│  7. Return results with status per user                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Simplifications:**
+
+1. **Direct Database Query** - No complex helper imports, uses `lib/db.ts` directly
+2. **In-Memory Cooldown** - Simple timestamp-based cooldown (1 minute global)
+3. **No Per-User Cooldown** - Simplified to global cooldown for trial account
+4. **Removed Dependencies** - No longer imports from `lib/db/users.ts`, `lib/db/alerts.ts`
+5. **Cleaner Function Signature** - `sendAlert(severity, message)` instead of options object
+
+
+**New Exports from `lib/twilio.ts`:**
+- `sendAlert(severity, message)` - Main function to send alerts
+- `sendDirectSMS(to, body)` - Send SMS to specific number
+- `isInCooldown()` - Check if cooldown is active
+- `getCooldownRemaining()` - Get seconds remaining in cooldown
+- `twilioClient` - Raw Twilio client for advanced usage
+
+**Security Model:**
+- Only users in the Neon database receive SMS
+- Database access protected by `DATABASE_URL` secret
+- Twilio trial limits to 5 verified phone numbers
+- Eligible users data pre-populated in database
+
+**Testing:**
+```bash
+# Enable multi-user mode
+echo "USE_MULTI_USER_ALERTS=true" >> .env.local
+
+# Test the alert endpoint
+curl -X POST http://localhost:3000/api/sms/alert \
+  -H "Content-Type: application/json" \
+  -d '{"dangerLevel": "DANGER", "description": "Test alert"}'
+```
+
+**Expected Console Output:**
+```
+[SMS ALERT API] ====== REQUEST RECEIVED ======
+[SMS ALERT API] Danger level: DANGER
+[SMS ALERT API] Multi-user mode: true
+[TWILIO] ====== SEND ALERT START ======
+[TWILIO] Querying database for eligible users, severity: DANGER
+[TWILIO] Found 2 eligible users:
+  - User 1 (+1234567890)
+  - User 2 (+0987654321)
+[TWILIO] Sending to User 1 at +1234567890
+[TWILIO] ✓ SMS sent to User 1, SID: SM123...
+[TWILIO] Sending to User 2 at +0987654321
+[TWILIO] ✓ SMS sent to User 2, SID: SM456...
+[TWILIO] ====== SEND ALERT COMPLETE ======
+[TWILIO] Sent: 2, Failed: 0, Total: 2
+```
+
+---
+
+*Last Updated: January 25, 2026*

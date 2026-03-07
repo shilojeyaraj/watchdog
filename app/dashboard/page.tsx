@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { useAuth, useUser } from "@clerk/nextjs"
-import { useRouter } from "next/navigation"
+import { useAuth } from "@clerk/nextjs"
 import { WarningWidget } from "@/components/dashboard/WarningWidget"
 import { AISummary } from "@/components/dashboard/SituationSummary"
 import { VideoFeed } from "@/components/dashboard/VideoFeed"
@@ -10,27 +9,24 @@ import { EventMap } from "@/components/dashboard/EventMap"
 import { useOvershootVision } from "@/app/overshoot"
 
 export default function DashboardPage() {
-  // ALL HOOKS MUST BE CALLED FIRST - before any conditional returns
-  const { isSignedIn, isLoaded } = useAuth()
-  const { user } = useUser()
-  const router = useRouter()
+  // Get the current user's Clerk ID for SMS alerts
+  const { userId: clerkId } = useAuth()
   
-  // Refs and state
+  const username = "User"
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const frameIntervalRef = useRef<number | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
 
-  // Overshoot vision hook
+  // Pass clerkId to the overshoot vision hook for user-specific SMS alerts
   const {
     sections,
     overallDangerLevel,
     dangerSince,
     isMonitoring,
     setIsMonitoring,
-    setStream: setOvershootStream,
-  } = useOvershootVision()
+  } = useOvershootVision({ clerkId })
 
   // Pass stream to Overshoot when VideoFeed provides it
   useEffect(() => {

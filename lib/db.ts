@@ -1,127 +1,74 @@
 // Database connection utility for Neon PostgreSQL
-// This file provides a reusable database client connection
+// Uses @neondatabase/serverless for serverless-friendly connections
 
-import { Client } from 'pg';
+import { neon } from '@neondatabase/serverless';
 
-let client: Client | null = null;
-let isConnected = false;
+// Create the SQL query function
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  console.error('[DB] DATABASE_URL environment variable is not set');
+}
+
+// The neon() function returns a SQL template tag function
+const sql = databaseUrl ? neon(databaseUrl) : null;
 
 /**
- * Get or create a database client connection
- * Reuses existing connection if available and healthy
+ * Execute a query using Neon's serverless driver
+ * Compatible with the old pg-style interface
  */
-function getDbClient(): Client {
-  const databaseUrl = process.env.DATABASE_URL;
-  
-  if (!databaseUrl) {
+export async function query<T = Record<string, unknown>>(
+  text: string,
+  params?: unknown[]
+): Promise<{ rows: T[]; rowCount: number }> {
+  if (!sql) {
     throw new Error('DATABASE_URL environment variable is not set');
   }
 
-  // If client exists but is in error state, close it and create a new one
-  if (client) {
-    // Check if client is in an error state (not queryable)
-    if ((client as any)._ending || (client as any)._connectionError) {
-      console.log('[DB] Client in error state, creating new connection');
-      client = null;
+  try {
+    // Use correct Neon API: sql.query for parameterized queries
+    let result;
+    if (params && params.length > 0) {
+      result = await sql.query(text, params);
+    } else {
+      result = await sql.query(text);
     }
-  }
-
-  if (!client) {
-    client = new Client({
-      connectionString: databaseUrl,
-    });
-    isConnected = false;
-
-    // Handle connection errors
-    client.on('error', (err) => {
-      console.error('[DB] Client connection error:', err);
-      (client as any)._connectionError = true;
-      isConnected = false;
-    });
-  }
-
-  return client;
-}
-
-/**
- * Execute a query with automatic connection handling and error recovery
- * Use this for one-off queries
- */
-export async function query<T = any>(
-  text: string,
-  params?: any[]
-): Promise<{ rows: T[]; rowCount: number }> {
-  let dbClient = getDbClient();
-  let retries = 2; // Try up to 2 times
-  
-  while (retries > 0) {
-    try {
-      // Connect if not already connected
-      if (!isConnected) {
-        await dbClient.connect();
-        isConnected = true;
-      }
-
-      const result = await dbClient.query(text, params);
-      return {
-        rows: result.rows as T[],
-        rowCount: result.rowCount || 0,
-      };
-    } catch (error: any) {
-      // Check if it's a connection error
-      const isConnectionError = 
-        error.message?.includes('connection error') ||
-        error.message?.includes('not queryable') ||
-        error.message?.includes('Connection terminated') ||
-        error.code === 'ECONNRESET' ||
-        error.code === 'EPIPE';
-      
-      if (isConnectionError && retries > 1) {
-        console.warn('[DB] Connection error detected, retrying with new connection...', error.message);
-        // Close the broken client
-        try {
-          await dbClient.end();
-        } catch (e) {
-          // Ignore errors when closing
-        }
-        // Reset client to force creation of new one
-        client = null;
-        isConnected = false;
-        dbClient = getDbClient();
-        retries--;
-        continue;
-      }
-      
-      console.error('[DB] Database query error:', error);
-      throw error;
+    // Neon v1.x sql.query() returns rows as a plain array (T[]), not { rows, rowCount }
+    // Handle both shapes for safety
+    const rows = Array.isArray(result)
+      ? result as T[]
+      : (result && Array.isArray(result.rows)) ? result.rows as T[] : [];
+    const rowCount = Array.isArray(result)
+      ? result.length
+      : (typeof result?.rowCount === 'number') ? result.rowCount : rows.length;
+    return {
+      rows,
+      rowCount,
+    };
+  } catch (error) {
+    if (error && error.message && error.message.includes('can now be called only as a tagged-template function')) {
+      console.error(`[DB] SQL USAGE ERROR: You must use sql\`...\` for tagged templates or sql.query("...", [params]) for parameterized queries. Received: text='${text}', params=${JSON.stringify(params)}`);
     }
+    console.error('[DB] Query error:', error);
+    throw error;
   }
   
   throw new Error('Failed to execute query after retries');
 }
 
 /**
- * Close the database connection
- * Call this when shutting down the application
- */
-export async function closeDb(): Promise<void> {
-  if (client) {
-    await client.end();
-    client = null;
-    isConnected = false;
-  }
-}
-
-/**
  * Test database connection
- * Useful for health checks
  */
 export async function testConnection(): Promise<boolean> {
   try {
     await query('SELECT 1');
+    console.log('[DB] Connection test successful');
     return true;
   } catch (error) {
-    console.error('Database connection test failed:', error);
+    console.error('[DB] Connection test failed:', error);
     return false;
   }
 }
+
+// Export sql for direct use if needed
+export { sql };

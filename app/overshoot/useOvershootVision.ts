@@ -53,7 +53,14 @@ type UseOvershootVisionResult = {
   setStream: (stream: MediaStream | null) => void
 }
 
-export function useOvershootVision(): UseOvershootVisionResult {
+// Props for the hook - now accepts clerkId for user-specific alerts
+type UseOvershootVisionProps = {
+  clerkId?: string | null
+}
+
+export function useOvershootVision(props?: UseOvershootVisionProps): UseOvershootVisionResult {
+  const clerkId = props?.clerkId
+  
   const [sections, setSections] = useState<{
     farthest: SectionResult | null
     middle: SectionResult | null
@@ -66,10 +73,65 @@ export function useOvershootVision(): UseOvershootVisionResult {
   const [overallDangerLevel, setOverallDangerLevel] = useState<DangerLevel>("SAFE")
   const [dangerSince, setDangerSince] = useState<Date>(new Date())
   const [isMonitoring, setIsMonitoring] = useState(false)
-  const [stream, setStream] = useState<MediaStream | null>(null)
   
-  // Use ref to track visions so cleanup can always access them
-  const visionsRef = useRef<OvershootVisionInstance[]>([])
+  // Track last alert sent to avoid duplicate API calls
+  const lastAlertRef = useRef<{ level: DangerLevel; time: number }>({ level: "SAFE", time: 0 })
+
+  // Effect to send SMS alerts when danger level changes
+  useEffect(() => {
+    if (!isMonitoring) return
+    if (!clerkId) {
+      console.log('[OVERSHOOT] No clerkId provided - SMS alerts disabled')
+      return
+    }
+
+    const now = Date.now()
+    const lastAlert = lastAlertRef.current
+    
+    // Only send alert if:
+    // 1. Danger level is WARNING or DANGER
+    // 2. It's different from the last alert we sent OR it's been more than 5 seconds
+    const shouldSendAlert = 
+      (overallDangerLevel === 'WARNING' || overallDangerLevel === 'DANGER') &&
+      (lastAlert.level !== overallDangerLevel || now - lastAlert.time > 5000)
+
+    if (!shouldSendAlert) return
+
+    // Get the combined summary from all sections
+    const summaries = [
+      sections.closest?.summary,
+      sections.middle?.summary,
+      sections.farthest?.summary
+    ].filter(Boolean).join(' ')
+
+    console.log('[OVERSHOOT] Sending SMS alert:', {
+      dangerLevel: overallDangerLevel,
+      clerkId,
+      summary: summaries.substring(0, 100) + '...'
+    })
+
+    // Update ref to track this alert
+    lastAlertRef.current = { level: overallDangerLevel, time: now }
+
+    // Send alert to SMS API
+    fetch('/api/sms/alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dangerLevel: overallDangerLevel,
+        description: summaries || 'Potential threat detected by AI monitoring',
+        clerkId
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        console.log('[OVERSHOOT] SMS API response:', data)
+      })
+      .catch(err => {
+        console.error('[OVERSHOOT] SMS API error:', err)
+      })
+
+  }, [overallDangerLevel, isMonitoring, clerkId, sections])
 
   useEffect(() => {
     // CRITICAL: Stop all existing instances FIRST before creating new ones
