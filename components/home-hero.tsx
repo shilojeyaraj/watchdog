@@ -5,7 +5,6 @@ import {
   SignedIn,
   SignedOut,
   SignInButton,
-  UserButton,
 } from "@clerk/nextjs";
 import Link from "next/link";
 import { BackgroundCircles } from "@/components/ui/background-circles";
@@ -58,7 +57,6 @@ export function HomeHero() {
           >
             Go to Dashboard
           </Link>
-          <UserButton afterSignOutUrl="/" />
         </div>
       </SignedIn>
     </BackgroundCircles>

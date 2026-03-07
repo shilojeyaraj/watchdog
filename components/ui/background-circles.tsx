@@ -80,6 +80,8 @@ export function BackgroundCircles({
         className
       )}
     >
+      {/* Gradient transition from black to white at the bottom */}
+      <div className="absolute bottom-0 left-0 right-0 h-[50px] bg-gradient-to-b from-transparent via-black/60 via-black/30 via-black/10 to-background pointer-events-none z-20" />
       {/* Full-page outer aura - lights up the whole background */}
       <AnimatePresence mode="wait">
         <motion.div
