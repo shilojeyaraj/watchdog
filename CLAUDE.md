@@ -31,6 +31,8 @@ npm run db:test           # Test PostgreSQL connection
 
 # Manual SMS testing
 node -e "require('./app/sms/automated_message.js').sendTestMessage()"
+node scripts/test-sms-user-alert.js   # Test user-specific alert flow (requires DB)
+node scripts/test-db-users.js         # Verify user records in Neon
 
 # Inspect/reset SMS alert state
 cat .sms-state.json
@@ -58,20 +60,27 @@ Camera (webcam) → POST /api/camera/upload (base64 JPEG frames)
 |------|---------|
 | `app/overshoot/useOvershootVision.ts` | **Canonical** AI polling hook - do not duplicate its loop |
 | `app/overshoot/types.ts` | `DangerLevel`, `OvershootParsed`, `OvershootResult` types |
-| `app/sms/smsState.ts` | **Single source of truth** for SMS alert state (disk I/O) |
-| `app/sms/automated_message.js` | Twilio client wrapper - all outbound SMS goes through here |
+| `app/sms/smsState.ts` | SMS alert state machine (disk I/O, consecutive-event counting) |
+| `app/sms/automated_message.js` | Legacy Twilio wrapper (env-var target number) |
+| `lib/twilio.ts` | **Current** Twilio module - user-specific alerts with DB lookup, cooldown, threshold |
+| `lib/db/users.ts` | User alert preferences (`getUserByClerkId`, `getUsersForAlert`, `updateUserAlertPreferences`) |
+| `lib/db/alerts.ts` | Alert audit log (`logAlert`, `isUserInCooldown`, `getAlertStats`) |
+| `lib/db/sync-user.ts` | Upserts Clerk user into Neon on every dashboard load (`syncCurrentUser`) |
 | `app/api/sms/alert/route.ts` | Receives danger events from frontend, triggers SMS |
 | `app/api/sms/incoming/route.ts` | Twilio webhook for inbound SMS replies |
 | `app/api/camera/store.ts` | In-memory store for latest camera frame |
+| `app/dashboard/layout.tsx` | Calls `syncCurrentUser()` server-side on every dashboard request |
 | `app/dashboard/page.tsx` | Main dashboard - orchestrates hooks, video, map |
 | `components/dashboard/EventMap.tsx` | Leaflet map with browser/IP geolocation and grid overlay |
 | `server.js` | Express+Socket.IO server wrapping Next.js |
 
-### SMS Alert State Machine
-- State persisted in `.sms-state.json` at project root
-- Alert fires after **3 consecutive DANGER events** and no more than **once per 60 seconds**
-- All state reads/writes go through `app/sms/smsState.ts` exported helpers - never `fs` directly from routes
-- State shape must remain backward compatible (new fields need defaults in `initializeState()`)
+### SMS Alert System
+Two parallel SMS paths exist:
+1. **Legacy** (`app/sms/automated_message.js` + `.sms-state.json`): Sends to `TWILIO_TO_NUMBER` env var; state machine fires after 3 consecutive DANGER events, once per 60s. State reads/writes go through `app/sms/smsState.ts` - never `fs` directly.
+2. **User-specific** (`lib/twilio.ts`): Looks up the authenticated Clerk user in Neon DB, checks `sms_alerts_enabled`, `phone_number`, and `alert_threshold` before sending. Cooldown tracked in-memory (60s). Alert records logged to `alert_records` table via `lib/db/alerts.ts`.
+
+### User Sync
+`app/dashboard/layout.tsx` runs `syncCurrentUser()` (server component) on every request, upserting Clerk user data into the `users` table. This ensures SMS preferences are always present before alerts fire. Per-user preferences (`sms_alerts_enabled`, `alert_threshold`, `phone_number`) are stored in `users` and read by `lib/twilio.ts`.
 
 ### API Conventions
 - All API routes use Next.js App Router (`app/api/**/route.ts`)

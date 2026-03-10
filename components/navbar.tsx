@@ -14,6 +14,8 @@ const navLinks = [
 export function Navbar() {
   const pathname = usePathname();
 
+  if (pathname.startsWith("/dashboard")) return null;
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 h-14 bg-black border-b border-white/20">
       {/* Logo */}

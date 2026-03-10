@@ -1,7 +1,5 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-
 interface SectionResult {
   summary: string
   grid: boolean[][]
@@ -22,7 +20,6 @@ export function AISummary({
   title = "AI Brief Summary of What's going",
   sections
 }: AISummaryProps) {
-  // Combine all section summaries into one cohesive paragraph
   const combinedSummary = sections
     ? [
         sections.closest?.summary,
@@ -32,13 +29,11 @@ export function AISummary({
     : "Longer description of ongoing danger, namely the cause, person(s), threat level, time of detection"
 
   return (
-    <Card className="h-full flex-[2] basis-2/3 min-h-[30vh]">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base sm:text-lg font-bold">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-foreground leading-relaxed text-sm sm:text-base">{combinedSummary}</p>
-      </CardContent>
-    </Card>
+    <div className="flex-[2] sm:basis-2/3 rounded-lg border border-white/10 bg-white/5 backdrop-blur-sm p-4 sm:p-6 min-h-[100px]">
+      <h3 className="text-sm sm:text-base font-semibold text-white/80 mb-2 uppercase tracking-widest">
+        {title}
+      </h3>
+      <p className="text-white/60 leading-relaxed text-sm sm:text-base">{combinedSummary}</p>
+    </div>
   )
 }

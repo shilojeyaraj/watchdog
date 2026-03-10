@@ -10,6 +10,7 @@ interface BackgroundCirclesProps {
   subtitle?: string;
   level?: ThreatLevel;
   className?: string;
+  id?: string;
   children?: React.ReactNode;
 }
 
@@ -69,12 +70,14 @@ export function BackgroundCircles({
   subtitle,
   level = "safe",
   className,
+  id,
   children,
 }: BackgroundCirclesProps) {
   const config = levelConfig[level];
 
   return (
     <div
+      id={id}
       className={cn(
         "relative flex flex-col items-center justify-center min-h-screen overflow-hidden bg-black",
         className

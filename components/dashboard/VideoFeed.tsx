@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 
-import { Card, CardContent } from "@/components/ui/card"
+// Card removed — using dark glass panel instead
 
 // Debug logging helper
 const DEBUG_VIDEO_FEED = true
@@ -323,40 +323,37 @@ export function VideoFeed({ active, onStreamReady }: VideoFeedProps) {
   }, [active, onStreamReady, hasCamera])
 
   return (
-    <Card className="h-full min-h-[60vh] sm:min-h-[60vh] flex-1">
-      <CardContent className="flex items-center justify-center h-full p-0 relative overflow-hidden">
-        <video
-          ref={videoRef}
-          id="camera"
-          autoPlay
-          muted
-          playsInline
-          className="w-full h-full object-cover rounded-2xl bg-black"
-          style={{ 
-            backgroundColor: '#000',
-            display: 'none' // Hidden - only used by Overshoot SDK
-          }}
-        />
-        <canvas 
-          ref={canvasRef} 
-          className="w-full h-full object-cover rounded-2xl bg-black"
-          width={1280}
-          height={720}
-          style={{ 
-            display: 'block',
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            backgroundColor: '#000',
-            zIndex: 1
-          }}
-        />
-        {!hasCamera && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-2xl z-20 pointer-events-none">
-            <p className="text-white text-xl font-extrabold">Camera Disabled, Video Feed Paused</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="h-full w-full rounded-lg border border-white/10 bg-black overflow-hidden relative flex items-center justify-center">
+      <video
+        ref={videoRef}
+        id="camera"
+        autoPlay
+        muted
+        playsInline
+        className="w-full h-full object-cover bg-black"
+        style={{ backgroundColor: '#000', display: 'none' }}
+      />
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full object-cover bg-black"
+        width={1280}
+        height={720}
+        style={{
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          backgroundColor: '#000',
+          zIndex: 1
+        }}
+      />
+      {!hasCamera && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-20 pointer-events-none">
+          <p className="text-white/60 text-sm sm:text-base font-medium tracking-wide uppercase">
+            Camera Disabled — Video Feed Paused
+          </p>
+        </div>
+      )}
+    </div>
   )
 }

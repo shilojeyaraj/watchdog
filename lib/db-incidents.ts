@@ -4,6 +4,12 @@ import { query } from './db';
 export type IncidentStatus = 'open' | 'acknowledged' | 'responding' | 'resolved' | 'false_alarm';
 export type IncidentPriority = 'low' | 'medium' | 'high' | 'critical';
 
+type IncidentRow = {
+  id: string; status: IncidentStatus; priority: IncidentPriority; title: string;
+  description: string | null; detected_at: Date; resolved_at: Date | null;
+  camera_id: string | null; first_event_id: string;
+};
+
 export interface CreateIncidentData {
   user_id?: string | null;
   location_id?: string | null;
@@ -140,7 +146,7 @@ export async function getIncidentsByUserId(
   `;
   params.push(limit);
 
-  const result = await query(sql, params);
+  const result = await query<IncidentRow>(sql, params);
   return result.rows;
 }
 
@@ -178,7 +184,7 @@ export async function getOpenIncidents(
   `;
   params.push(limit);
 
-  const result = await query(sql, params);
+  const result = await query<IncidentRow>(sql, params);
   return result.rows;
 }
 
@@ -217,7 +223,7 @@ export async function getAllIncidents(
   `;
   params.push(limit);
 
-  const result = await query(sql, params);
+  const result = await query<IncidentRow>(sql, params);
   return result.rows;
 }
 

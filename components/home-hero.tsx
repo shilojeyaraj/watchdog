@@ -26,6 +26,7 @@ export function HomeHero() {
 
   return (
     <BackgroundCircles
+      id="hero"
       title="Welcome to Watchdog."
       subtitle="Threat Detection and Mapping for First Responders"
       level={CYCLE[levelIndex]}

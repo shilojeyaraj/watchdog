@@ -177,7 +177,12 @@ export async function getEventsByUserId(
   `;
   params.push(limit);
 
-  const result = await query(sql, params);
+  type EventRow = {
+    id: string; event_type: string; severity: string; title: string;
+    description: string | null; metadata: any; camera_id: string | null;
+    section: string | null; occurred_at: Date;
+  };
+  const result = await query<EventRow>(sql, params);
 
   return result.rows.map(row => ({
     ...row,
@@ -219,7 +224,12 @@ export async function getWarningEvents(
   `;
   params.push(limit);
 
-  const result = await query(sql, params);
+  type EventRow = {
+    id: string; event_type: string; severity: string; title: string;
+    description: string | null; metadata: any; camera_id: string | null;
+    section: string | null; occurred_at: Date;
+  };
+  const result = await query<EventRow>(sql, params);
 
   return result.rows.map(row => ({
     ...row,

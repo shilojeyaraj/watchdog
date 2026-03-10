@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import dynamic from "next/dynamic"
-import { Card, CardContent } from "@/components/ui/card"
+// Card removed — using dark glass panel
 
 // Fix Leaflet marker icon paths for Next.js (common issue) - must be done client-side
 // Note: Leaflet CSS is already imported in app/globals.css
@@ -557,88 +557,81 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
 
   if (!isClient) {
     return (
-      <Card className="h-full min-h-[500px] flex-1 flex flex-col">
-        <CardContent className="flex items-center justify-center h-full flex-1 p-4">
-          <p className="text-foreground">Loading map...</p>
-        </CardContent>
-      </Card>
+      <div className="flex-1 min-h-[350px] md:min-h-0 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center">
+        <p className="text-white/40 text-sm">Loading map...</p>
+      </div>
     )
   }
 
   // Show location request UI if no location yet
   if (!userLocation) {
     return (
-      <Card className="h-full min-h-[500px] flex-1 flex flex-col">
-        <CardContent className="flex flex-col items-center justify-center h-full flex-1 p-4">
-          {isRequestingLocation ? (
-            <div className="text-center">
-              <p className="text-foreground mb-2 text-lg font-semibold">
-                Requesting location permission...
-              </p>
-              <p className="text-sm text-muted-foreground mb-4">
-                A browser popup should appear asking for location access.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                If no popup appears, check your browser's address bar for a location icon, or click "Try Again" below.
-              </p>
-            </div>
-          ) : locationError ? (
-            <div className="text-center max-w-md">
-              <p className="text-foreground mb-2 text-lg font-semibold text-red-600">
-                Location Access Required
-              </p>
-              <p className="text-sm text-muted-foreground mb-4">
-                {locationError}
-              </p>
-              <div className="space-y-2">
-                <button
-                  onClick={requestLocation}
-                  className="w-full px-6 py-3 bg-danger text-foreground border border-[#000000] border-[0.0625rem] rounded font-medium hover:opacity-90 transition-opacity"
-                >
-                  Allow Location Access
-                </button>
-                <button
-                  onClick={requestLocation}
-                  className="w-full px-6 py-2 text-sm text-muted-foreground border border-gray-300 rounded hover:bg-gray-100 transition-colors"
-                >
-                  Try IP-Based Location (Less Accurate)
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center max-w-md">
-              <p className="text-foreground mb-2 text-lg font-semibold">
-                Location Access Required
-              </p>
-              <p className="text-sm text-muted-foreground mb-4">
-                To show events on the map, we need your location. Click the button below to allow location access.
-              </p>
-              <p className="text-xs text-muted-foreground mb-4">
-                A browser popup will appear asking for permission. Please click "Allow" to continue.
-              </p>
+      <div className="flex-1 min-h-[350px] md:min-h-0 rounded-lg border border-white/10 bg-white/5 flex flex-col items-center justify-center p-6">
+        {isRequestingLocation ? (
+          <div className="text-center">
+            <p className="text-white mb-2 text-base font-medium">
+              Requesting location permission...
+            </p>
+            <p className="text-sm text-white/50 mb-4">
+              A browser popup should appear asking for location access.
+            </p>
+            <p className="text-xs text-white/30">
+              If no popup appears, check your browser&apos;s address bar for a location icon.
+            </p>
+          </div>
+        ) : locationError ? (
+          <div className="text-center max-w-sm">
+            <p className="text-red-400 mb-2 text-base font-semibold">
+              Location Access Required
+            </p>
+            <p className="text-sm text-white/50 mb-4">{locationError}</p>
+            <div className="space-y-2">
               <button
                 onClick={requestLocation}
-                className="w-full px-6 py-3 bg-danger text-foreground border border-[#000000] border-[0.0625rem] rounded font-medium hover:opacity-90 transition-opacity"
+                className="w-full px-6 py-2.5 text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/30 rounded-sm transition-colors"
               >
                 Allow Location Access
               </button>
+              <button
+                onClick={requestLocation}
+                className="w-full px-6 py-2 text-xs text-white/40 border border-white/10 rounded-sm hover:bg-white/5 transition-colors"
+              >
+                Try IP-Based Location (Less Accurate)
+              </button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        ) : (
+          <div className="text-center max-w-sm">
+            <p className="text-white mb-2 text-base font-medium">
+              Location Access Required
+            </p>
+            <p className="text-sm text-white/50 mb-4">
+              Click below to allow location access and show events on the map.
+            </p>
+            <button
+              onClick={requestLocation}
+              className="w-full px-6 py-2.5 text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/30 rounded-sm transition-colors"
+            >
+              Allow Location Access
+            </button>
+          </div>
+        )}
+      </div>
     )
   }
 
+  const mapHeight = "clamp(280px, 45vh, 560px)"
+
   return (
-    <Card className="h-full flex-1 flex flex-col overflow-hidden">
-      <CardContent className="flex flex-col h-full p-0">
+    <div className="flex-1 min-h-[350px] md:min-h-0 rounded-lg border border-white/10 bg-white/5 flex flex-col overflow-hidden">
         {/* Map container - explicit height for Leaflet */}
         <div
           ref={containerRef}
           style={{
-            height: "400px",
+            height: mapHeight,
             width: "100%",
             position: "relative",
+            flexShrink: 0,
           }}
           id="map-container"
         >
@@ -646,8 +639,8 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
             <MapContainer
               center={userLocation}
               zoom={DEFAULT_ZOOM}
-              style={{ 
-                height: "400px", 
+              style={{
+                height: mapHeight,
                 width: "100%",
               }}
               scrollWheelZoom={true}
@@ -656,8 +649,8 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
             >
               <MapInitializer />
               <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://carto.com/attributions">CartoDB</a>'
+                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                 eventHandlers={{
                   loading: () => {
                     console.log("[EventMap] Tiles loading...")
@@ -716,58 +709,57 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
               ))}
             </MapContainer>
           ) : (
-            <div className="flex items-center justify-center" style={{ height: "400px" }}>
-              <p className="text-foreground">Initializing map...</p>
+            <div className="flex items-center justify-center" style={{ height: mapHeight }}>
+              <p className="text-white/40 text-sm">Initializing map...</p>
             </div>
           )}
         </div>
 
         {/* Address and location info */}
-        <div className="p-4 border-t bg-card space-y-3">
+        <div className="p-3 sm:p-4 border-t border-white/10 space-y-2 flex-1">
           <div>
-            <label className="text-sm font-medium text-foreground mb-2 block">
-              {events.length > 0 ? "Event Location:" : "Your Predicted Location:"}
+            <label className="text-xs font-medium text-white/40 mb-1 block uppercase tracking-widest">
+              {events.length > 0 ? "Event Location" : "Predicted Location"}
             </label>
             <input
               type="text"
               readOnly
               value={events.length > 0 ? address : address || "Getting location..."}
-              className="w-full px-3 py-2 bg-background border border-gray-300 rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-danger focus:border-transparent"
+              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded text-white/80 text-sm focus:outline-none focus:ring-1 focus:ring-white/30"
               style={{ cursor: "default" }}
             />
           </div>
-          
+
           <div className="flex flex-wrap gap-4 text-xs">
             {locationAccuracy !== null && (
-              <div className="text-muted-foreground">
+              <div className="text-white/40">
                 <span className="font-medium">Accuracy: </span>
                 {locationAccuracy < 50 ? (
-                  <span className="text-green-600 font-semibold">Excellent ({locationAccuracy.toFixed(0)}m)</span>
+                  <span className="text-emerald-400 font-semibold">Excellent ({locationAccuracy.toFixed(0)}m)</span>
                 ) : locationAccuracy < 100 ? (
-                  <span className="text-green-600">Good ({locationAccuracy.toFixed(0)}m)</span>
+                  <span className="text-emerald-400">Good ({locationAccuracy.toFixed(0)}m)</span>
                 ) : locationAccuracy < 500 ? (
-                  <span className="text-yellow-600">Fair ({locationAccuracy.toFixed(0)}m)</span>
+                  <span className="text-amber-400">Fair ({locationAccuracy.toFixed(0)}m)</span>
                 ) : (
-                  <span className="text-red-600">Poor ({locationAccuracy.toFixed(0)}m)</span>
+                  <span className="text-red-400">Poor ({locationAccuracy.toFixed(0)}m)</span>
                 )}
               </div>
             )}
-            
+
             {userLocation && (
-              <div className="text-muted-foreground">
-                <span className="font-medium">Coordinates: </span>
-                <span className="font-mono">{userLocation[0].toFixed(6)}, {userLocation[1].toFixed(6)}</span>
+              <div className="text-white/30">
+                <span className="font-medium">Coords: </span>
+                <span className="font-mono">{userLocation[0].toFixed(5)}, {userLocation[1].toFixed(5)}</span>
               </div>
             )}
           </div>
-          
+
           {locationAccuracy !== null && locationAccuracy > 100 && (
-            <div className="text-xs text-yellow-600 bg-yellow-50 border border-yellow-200 rounded px-2 py-1">
-              💡 Tip: Try moving to an area with better GPS signal for improved accuracy
+            <div className="text-xs text-amber-400/70 bg-amber-400/5 border border-amber-400/20 rounded px-2 py-1">
+              Move to an area with better GPS signal for improved accuracy.
             </div>
           )}
         </div>
-      </CardContent>
-    </Card>
+    </div>
   )
 }

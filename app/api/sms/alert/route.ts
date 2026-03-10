@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
+import { getUserByClerkId } from '@/lib/db-users';
 import { initializeState, updateDangerLevel, updateIncidentCount, shouldTriggerAlert, shouldCreateIncident, isThrottled, recordAlertSent, resetIncidentCount } from '@/app/sms/smsState';
 import { sendInitialAlertSMS } from '@/app/sms/automated_message';
-import { createDangerDetectionEvent } from '@/lib/db-events';
-import { createIncidentFromEvent } from '@/lib/db-incidents';
-import { getUserByClerkId } from '@/lib/db-users';
-import { shouldThrottleEvent } from '@/lib/db-event-throttle';
+import { sendAlertToUser, isInCooldown, getCooldownRemaining } from '@/lib/twilio';
 
 export async function POST(request: NextRequest) {
+  console.log('[SMS ALERT API] ====== REQUEST RECEIVED ======');
+  
   try {
     // Initialize state on first run
     initializeState();
@@ -26,138 +26,120 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { dangerLevel, description, personGrid, section, cameraId } = body;
+    const { dangerLevel, description, clerkId } = body;
+
+    console.log('[SMS ALERT API] Danger level:', dangerLevel);
+    console.log('[SMS ALERT API] Description:', description);
+    console.log('[SMS ALERT API] Clerk ID:', clerkId || 'NOT PROVIDED');
 
     // Validate input
     if (!dangerLevel || !['SAFE', 'WARNING', 'DANGER'].includes(dangerLevel)) {
+      console.log('[SMS ALERT API] ❌ Invalid danger level');
       return NextResponse.json(
         { error: 'Invalid or missing dangerLevel' },
         { status: 400 }
       );
     }
 
-    // Update the consecutive danger count (for SMS alerts - requires 3)
+    // Require clerkId for user-specific alerts
+    if (!clerkId) {
+      console.log('[SMS ALERT API] ❌ No clerkId provided');
+      return NextResponse.json(
+        { error: 'clerkId is required to send alerts to the logged-in user' },
+        { status: 400 }
+      );
+    }
+
+    // Update the consecutive danger count
     const consecutiveCount = updateDangerLevel(dangerLevel);
+    console.log(`[SMS ALERT API] Consecutive count: ${consecutiveCount}`);
 
-    // Update consecutive incident count (for incident creation - requires 4)
-    const consecutiveIncidentCount = updateIncidentCount(dangerLevel);
+    // Check if we should send an alert
+    const shouldAlert = shouldTriggerAlert();
+    const throttled = isThrottled();
+    
+    console.log(`[SMS ALERT API] Should trigger: ${shouldAlert}, Throttled: ${throttled}`);
 
-    console.log(
-      `[SMS Alert API] Danger level: ${dangerLevel}, Consecutive count: ${consecutiveCount}, Incident count: ${consecutiveIncidentCount}`
-    );
-
-    // Store event in database (for WARNING and DANGER only) with throttling
-    let eventId: string | null = null;
-    if (dangerLevel !== 'SAFE') {
-      // Check if we should throttle event storage (15 second interval)
-      const throttleCheck = shouldThrottleEvent(dangerLevel, {
-        section: section || undefined,
-        cameraId: cameraId || 'default',
-      });
-
-      if (!throttleCheck.throttle) {
-        try {
-          eventId = await createDangerDetectionEvent(dangerLevel, description || '', {
-            user_id: userId,
-            camera_id: cameraId || 'default',
-            section: section || undefined,
-            personGrid: personGrid || undefined,
-            consecutiveCount,
-          });
-          console.log(`[SMS Alert API] Event stored: ${eventId} (reason: ${throttleCheck.reason || 'normal'})`);
-        } catch (error) {
-          console.error('[SMS Alert API] Failed to store event:', error);
-          // Continue even if event storage fails
+    if (shouldAlert && !throttled) {
+      try {
+        // Check Twilio cooldown first
+        if (isInCooldown()) {
+          const remaining = getCooldownRemaining();
+          console.log(`[SMS ALERT API] Twilio cooldown active - ${remaining}s remaining`);
+          return NextResponse.json(
+            {
+              success: false,
+              message: `SMS cooldown active - ${remaining}s remaining`,
+              consecutiveCount,
+              throttled: true,
+            },
+            { status: 429 }
+          );
         }
-      } else {
-        console.log(`[SMS Alert API] Event throttled: ${throttleCheck.reason}`);
-      }
-    }
-
-    // Create incident independently of SMS alerts (requires 4 consecutive detections)
-    // This can happen even if SMS is throttled or if we have WARNING (not DANGER)
-    let incidentId: string | null = null;
-    if (shouldCreateIncident() && eventId && (dangerLevel === 'DANGER' || dangerLevel === 'WARNING')) {
-      try {
-        incidentId = await createIncidentFromEvent(
-          eventId,
-          dangerLevel as 'WARNING' | 'DANGER',
-          description || '',
-          {
-            user_id: userId,
-            camera_id: cameraId || 'default',
-          }
-        );
-        console.log(`[SMS Alert API] Incident created: ${incidentId} (after ${consecutiveIncidentCount} consecutive detections)`);
         
-        // Reset incident count after creating incident to prevent duplicate incidents
-        // This ensures we need another 4 consecutive detections before creating a new incident
-        resetIncidentCount();
-      } catch (error) {
-        console.error('[SMS Alert API] Failed to create incident:', error);
-        // Continue even if incident creation fails
-      }
-    } else if (dangerLevel === 'DANGER' || dangerLevel === 'WARNING') {
-      console.log(`[SMS Alert API] Incident not created yet - need 4 consecutive detections (current: ${consecutiveIncidentCount})`);
-    }
-
-    // Check if we should send an alert (SMS requires 3 consecutive DANGER events)
-    if (shouldTriggerAlert() && !isThrottled()) {
-      try {
-        // Send the initial alert SMS
-        await sendInitialAlertSMS(dangerLevel, description);
-
-        // Record that we sent an alert
-        recordAlertSent(dangerLevel, description, 'initial');
-
+        // Build the alert message
+        const shortDesc = (description || 'Potential threat detected').slice(0, 100);
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const alertMessage = `WATCHDOG ALERT\nLevel: ${dangerLevel}\n${shortDesc}\n${time}`;
+        
+        console.log('[SMS ALERT API] Sending alert to user:', clerkId);
+        
+        // Send alert to the specific logged-in user
+        const result = await sendAlertToUser(
+          clerkId,
+          dangerLevel as 'WARNING' | 'DANGER',
+          alertMessage
+        );
+        
+        console.log('[SMS ALERT API] Result:', result);
+        
+        // Record in legacy system for backwards compatibility
+        if (result.sent > 0) {
+          recordAlertSent(dangerLevel, description, 'initial');
+        }
+        
         return NextResponse.json(
           {
-            success: true,
-            message: 'Alert sent successfully',
+            success: result.sent > 0,
+            message: result.sent > 0 
+              ? `Alert sent to ${result.displayName || 'user'}` 
+              : result.reason || 'Alert not sent',
             consecutiveCount,
-            consecutiveIncidentCount,
-            eventId,
-            incidentId,
+            result
           },
-          { status: 200 }
+          { status: result.sent > 0 ? 200 : 200 } // 200 even if not sent (user preference)
         );
       } catch (error) {
-        console.error('[SMS Alert API] Failed to send SMS:', error);
+        console.error('[SMS ALERT API] Failed to send SMS:', error);
         return NextResponse.json(
           { error: 'Failed to send SMS', details: (error as Error).message },
           { status: 500 }
         );
       }
-    } else if (shouldTriggerAlert() && isThrottled()) {
-      console.log('[SMS Alert API] Alert throttled - last alert sent less than 1 minute ago');
+    } else if (shouldAlert && throttled) {
+      console.log('[SMS ALERT API] Alert throttled by smsState');
       return NextResponse.json(
         {
           success: false,
           message: 'Alert throttled - will not send another alert within 1 minute',
           consecutiveCount,
-          consecutiveIncidentCount,
           throttled: true,
-          eventId,
         },
-        { status: 429 } // Too Many Requests
+        { status: 429 }
       );
     } else {
-      console.log(
-        `[SMS Alert API] No alert needed - consecutive count (${consecutiveCount}) < 3`
-      );
+      console.log(`[SMS ALERT API] No alert needed - count ${consecutiveCount} < 3`);
       return NextResponse.json(
         {
           success: false,
           message: 'Not enough consecutive DANGER events to trigger alert',
           consecutiveCount,
-          consecutiveIncidentCount,
-          eventId,
         },
         { status: 200 }
       );
     }
   } catch (error) {
-    console.error('[SMS Alert API] Error:', error);
+    console.error('[SMS ALERT API] Error:', error);
     return NextResponse.json(
       { error: 'Internal server error', details: (error as Error).message },
       { status: 500 }

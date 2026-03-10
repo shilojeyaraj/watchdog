@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { useAuth, useUser } from "@clerk/nextjs"
 import { useRouter } from "next/navigation"
+import { useAuth, useUser } from "@clerk/nextjs"
 import { WarningWidget } from "@/components/dashboard/WarningWidget"
 import { AISummary } from "@/components/dashboard/SituationSummary"
 import { VideoFeed } from "@/components/dashboard/VideoFeed"
@@ -10,36 +10,35 @@ import { EventMap } from "@/components/dashboard/EventMap"
 import { useOvershootVision } from "@/app/overshoot"
 
 export default function DashboardPage() {
-  // ALL HOOKS MUST BE CALLED FIRST - before any conditional returns
-  const { isSignedIn, isLoaded } = useAuth()
-  const { user } = useUser()
+  // Get the current user's Clerk ID for SMS alerts
+  const { userId: clerkId } = useAuth()
+  const { isLoaded, isSignedIn, user } = useUser()
   const router = useRouter()
   
-  // Refs and state
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const frameIntervalRef = useRef<number | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
 
-  // Overshoot vision hook
+  // Pass clerkId to the overshoot vision hook for user-specific SMS alerts
   const {
     sections,
     overallDangerLevel,
     dangerSince,
     isMonitoring,
     setIsMonitoring,
-    setStream: setOvershootStream,
-  } = useOvershootVision()
+    setStream,
+  } = useOvershootVision({ clerkId })
 
   // Pass stream to Overshoot when VideoFeed provides it
   useEffect(() => {
     if (remoteStream) {
-      setOvershootStream(remoteStream)
+      setStream(remoteStream)
     } else {
-      setOvershootStream(null)
+      setStream(null)
     }
-  }, [remoteStream, setOvershootStream])
+  }, [remoteStream, setStream])
 
   // Redirect if not signed in
   useEffect(() => {
@@ -214,8 +213,8 @@ export default function DashboardPage() {
   // Show loading while checking auth (AFTER all hooks)
   if (!isLoaded) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-foreground">Loading...</p>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <p className="text-white/40 text-sm tracking-widest uppercase">Loading...</p>
       </div>
     )
   }
@@ -267,13 +266,14 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="min-h-screen bg-background p-6 sm:p-8 lg:p-12">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-5xl sm:text-6xl font-light text-foreground mb-8">
+    <div className="min-h-screen bg-black text-white flex flex-col">
+      <div className="flex flex-col flex-1 p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto">
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-light text-white mb-4 sm:mb-6 shrink-0">
           Welcome {username}.
         </h1>
 
-        <div className="flex flex-row gap-4 sm:gap-6 mb-4 sm:mb-6 min-h-[30vh]">
+        {/* Status row */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-3 sm:mb-4 shrink-0">
           <WarningWidget level={overallDangerLevel} since={dangerSince} />
           <AISummary
             title="AI Summary of Ongoing Situation"
@@ -281,9 +281,10 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="flex flex-row gap-4 sm:gap-6 min-h-[60vh]">
-          <div className="flex flex-col flex-1 gap-3">
-            <div className="relative rounded-lg overflow-hidden">
+        {/* Main row – fills remaining height */}
+        <div className="flex flex-col md:flex-row gap-3 sm:gap-4 flex-1">
+          <div className="flex flex-col flex-1 gap-3 min-h-0">
+            <div className="relative rounded-lg overflow-hidden flex-1 min-h-[280px] md:min-h-0">
               <video
                 ref={videoRef}
                 autoPlay
@@ -300,7 +301,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => setIsMonitoring((value) => !value)}
-              className="self-start px-4 py-2 text-xs sm:text-sm bg-danger text-foreground border border-[#000000] border-[0.0625rem]"
+              className="self-start px-6 py-2.5 text-xs sm:text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/30 rounded-sm backdrop-blur-sm transition-colors shrink-0"
             >
               {isMonitoring ? "Stop Monitoring" : "Start Monitoring"}
             </button>
