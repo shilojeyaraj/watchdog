@@ -43,6 +43,11 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
 }
 
+/* Hide Leaflet attribution (optional – keep if you need to comply with tile provider terms) */
+.leaflet-control-attribution {
+  display: none !important;
+}
+
 :root {
   --background: #e8e8e8;
   --foreground: #000000;

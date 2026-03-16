@@ -52,24 +52,48 @@ const DEFAULT_ZOOM = 18 // Building-level zoom
 // Grid is 10x10, we'll map it to a small area (e.g., 100m x 100m)
 const GRID_TO_MAP_OFFSET = 0.0009 // ~100 meters in degrees
 
-function MapBounds({ events }: { events: Array<{ lat: number; lng: number }> }) {
+function MapBounds({
+  events,
+  userLocation,
+}: {
+  events: Array<{ lat: number; lng: number }>
+  userLocation: [number, number]
+}) {
   const MapBoundsInner = dynamic(
     () =>
       import("react-leaflet").then((mod) => {
         const { useMap } = mod
-        return function Inner() {
+        return function Inner({
+          events: evts,
+          userLocation: loc,
+        }: {
+          events: Array<{ lat: number; lng: number }>
+          userLocation: [number, number]
+        }) {
           const map = useMap()
+          const hasFittedRef = useRef(false)
 
           useEffect(() => {
-            if (events.length > 0) {
-              import("leaflet").then((L) => {
-                const bounds = L.default.latLngBounds(
-                  events.map((e) => [e.lat, e.lng])
-                )
-                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 19 })
-              })
+            if (evts.length === 0) {
+              hasFittedRef.current = false
+              return
             }
-          }, [events, map])
+            // Only fit bounds once when danger first appears, not on every grid update
+            if (hasFittedRef.current) return
+            hasFittedRef.current = true
+
+            import("leaflet").then((L) => {
+              const points: [number, number][] = [
+                loc,
+                ...evts.map((e) => [e.lat, e.lng] as [number, number]),
+              ]
+              const bounds = L.default.latLngBounds(points)
+              map.fitBounds(bounds, {
+                padding: [60, 60],
+                maxZoom: 18,
+              })
+            })
+          }, [evts.length, loc, map])
 
           return null
         }
@@ -77,7 +101,7 @@ function MapBounds({ events }: { events: Array<{ lat: number; lng: number }> }) 
     { ssr: false }
   )
 
-  return <MapBoundsInner />
+  return <MapBoundsInner events={events} userLocation={userLocation} />
 }
 
 // Component to handle map initialization after it's created
@@ -88,13 +112,20 @@ function MapInitializer() {
         const { useMap } = mod
         return function Inner() {
           const map = useMap()
+          if (!map) return null
 
           useEffect(() => {
-            // Ensure map size is correct after initialization
-            setTimeout(() => {
-              map.invalidateSize()
-              console.log("[EventMap] Map initialized and size invalidated")
-            }, 100)
+            const container = map.getContainer?.()
+            if (!container) return
+            const t = setTimeout(() => {
+              try {
+                map.invalidateSize()
+                console.log("[EventMap] Map initialized and size invalidated")
+              } catch (err) {
+                console.warn("[EventMap] Map invalidateSize skipped", err)
+              }
+            }, 150)
+            return () => clearTimeout(t)
           }, [map])
 
           return null
@@ -649,8 +680,8 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
             >
               <MapInitializer />
               <TileLayer
-                attribution='&copy; <a href="https://carto.com/attributions">CartoDB</a>'
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 eventHandlers={{
                   loading: () => {
                     console.log("[EventMap] Tiles loading...")
@@ -664,7 +695,7 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
                 }}
               />
 
-              {events.length > 0 && <MapBounds events={events} />}
+              {events.length > 0 && <MapBounds events={events} userLocation={userLocation} />}
 
               {/* User location marker */}
               <Marker position={userLocation}>
