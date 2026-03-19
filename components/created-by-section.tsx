@@ -9,7 +9,7 @@ export function CreatedBySection() {
           Created By
         </p>
         <h2 className="text-4xl sm:text-5xl font-light text-white tracking-tight">
-          Shilo Jeyaraj
+          Shilo Jeyarajasingam and Ian Xiong
         </h2>
         <p className="text-white/50 text-base max-w-md">
           Watchdog was built as a real-time threat detection platform for first
@@ -17,9 +17,7 @@ export function CreatedBySection() {
           alerting into a single command centre.
         </p>
         <div className="w-12 h-px bg-white/20 mt-2" />
-        <p className="text-white/30 text-sm">
-          Built with Next.js, Socket.IO, Clerk, Neon PostgreSQL, and Twilio.
-        </p>
+        
       </div>
     </section>
   );

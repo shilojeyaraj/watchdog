@@ -6,6 +6,8 @@ import {
   SignedOut,
   SignInButton,
 } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BackgroundCircles } from "@/components/ui/background-circles";
 
@@ -16,6 +18,8 @@ const INTERVAL_MS = 2500;
 
 export function HomeHero() {
   const [levelIndex, setLevelIndex] = useState(0);
+  const { isLoaded, isSignedIn } = useAuth();
+  const router = useRouter();
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -23,6 +27,12 @@ export function HomeHero() {
     }, INTERVAL_MS);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      router.push("/dashboard");
+    }
+  }, [isLoaded, isSignedIn, router]);
 
   return (
     <BackgroundCircles

@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { useAuth, useUser } from "@clerk/nextjs"
+import { SignOutButton, useAuth, useUser } from "@clerk/nextjs"
 import { WarningWidget } from "@/components/dashboard/WarningWidget"
 import { AISummary } from "@/components/dashboard/SituationSummary"
 import { VideoFeed } from "@/components/dashboard/VideoFeed"
 import { EventMap } from "@/components/dashboard/EventMap"
 import { useOvershootVision } from "@/app/overshoot"
+import { IncidentsPanel } from "@/components/dashboard/IncidentsPanel"
 
 export default function DashboardPage() {
   // Get the current user's Clerk ID for SMS alerts
@@ -268,9 +269,20 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
       <div className="flex flex-col flex-1 p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto">
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-light text-white mb-4 sm:mb-6 shrink-0">
-          Welcome {username}.
-        </h1>
+        <div className="flex items-start justify-between gap-4 mb-4 sm:mb-6 shrink-0">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-light text-white">
+            Welcome {username}.
+          </h1>
+
+          <SignOutButton redirectUrl="/" signOutOptions={{ redirectUrl: "/" }}>
+            <button
+              type="button"
+              className="mt-2 px-5 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/30 rounded-sm transition-colors shrink-0"
+            >
+              Log out
+            </button>
+          </SignOutButton>
+        </div>
 
         {/* Status row */}
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-3 sm:mb-4 shrink-0">
@@ -308,6 +320,9 @@ export default function DashboardPage() {
           </div>
           <EventMap grid={combinedPersonGrid} isMonitoring={isMonitoring} />
         </div>
+
+        {/* Incidents history table */}
+        <IncidentsPanel isMonitoring={isMonitoring} />
       </div>
     </div>
   )

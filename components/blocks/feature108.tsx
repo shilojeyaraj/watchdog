@@ -125,7 +125,17 @@ const Feature108 = ({
                   <p className="text-muted-foreground lg:text-lg">
                     {tab.content.description}
                   </p>
-                  <Button asChild className="mt-2.5 w-fit gap-2" size="lg">
+                  <Button
+                    asChild
+                    className={[
+                      "mt-2.5 w-fit gap-2",
+                      // Make the dashboard CTA pop with a darker button for contrast
+                      tab.content.buttonHref === "/dashboard"
+                        ? "bg-black text-white hover:bg-black/90 border border-white/10"
+                        : "",
+                    ].join(" ")}
+                    size="lg"
+                  >
                     <Link href={tab.content.buttonHref}>
                       {tab.content.buttonText}
                     </Link>

@@ -144,6 +144,10 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
   const [address, setAddress] = useState<string>("Waiting for location permission...")
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null)
   const [isClient, setIsClient] = useState(false)
+  const [eventIcons, setEventIcons] = useState<{
+    danger?: any
+    warning?: any
+  } | null>(null)
   const [locationError, setLocationError] = useState<string | null>(null)
   const [isRequestingLocation, setIsRequestingLocation] = useState(false)
   const [mapLoaded, setMapLoaded] = useState(false)
@@ -155,6 +159,56 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
   useEffect(() => {
     setIsClient(true)
   }, [])
+
+  // Create custom colored marker icons (red for DANGER / amber for WARNING).
+  // Using divIcon keeps everything self-contained (no external marker images).
+  useEffect(() => {
+    if (!isClient) return
+
+    import("leaflet").then((L) => {
+      const createPinIcon = (color: string) => {
+        const html = `
+          <div
+            style="
+              width:22px;
+              height:22px;
+              background:${color};
+              transform: rotate(-45deg);
+              border-radius: 8px 8px 0 8px;
+              border: 2px solid rgba(255,255,255,0.95);
+              box-shadow: 0 0 14px ${color};
+              display:flex;
+              align-items:center;
+              justify-content:center;
+            "
+          >
+            <div
+              style="
+                width:10px;
+                height:10px;
+                background:#ffffff;
+                border-radius:50%;
+                transform: rotate(45deg);
+              "
+            />
+          </div>
+        `
+
+        return L.default.divIcon({
+          html,
+          iconSize: [22, 22],
+          iconAnchor: [11, 22],
+          popupAnchor: [0, -20],
+          className: "",
+        })
+      }
+
+      setEventIcons({
+        danger: createPinIcon("#dc2626"),
+        warning: createPinIcon("#f59e0b"),
+      })
+    })
+  }, [isClient])
 
   // Helper function for reverse geocoding
   const reverseGeocode = useCallback((lat: number, lng: number) => {
@@ -721,6 +775,13 @@ export function EventMap({ grid = [], isMonitoring = false }: EventMapProps) {
                 <Marker
                   key={`${event.row}-${event.col}-${index}`}
                   position={[event.lat, event.lng]}
+                  icon={
+                    eventIcons
+                      ? event.level === "DANGER"
+                        ? eventIcons.danger
+                        : eventIcons.warning
+                      : undefined
+                  }
                 >
                   <Popup>
                     <div>

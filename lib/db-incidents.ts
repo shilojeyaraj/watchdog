@@ -5,9 +5,17 @@ export type IncidentStatus = 'open' | 'acknowledged' | 'responding' | 'resolved'
 export type IncidentPriority = 'low' | 'medium' | 'high' | 'critical';
 
 type IncidentRow = {
-  id: string; status: IncidentStatus; priority: IncidentPriority; title: string;
-  description: string | null; detected_at: Date; resolved_at: Date | null;
-  camera_id: string | null; first_event_id: string;
+  id: string;
+  status: IncidentStatus;
+  priority: IncidentPriority;
+  title: string;
+  description: string | null;
+  detected_at: Date;
+  resolved_at: Date | null;
+  camera_id: string | null;
+  first_event_id: string;
+  // Joined from the first event to give the UI a "location-ish" field (farthest/middle/closest).
+  detection_section: 'farthest' | 'middle' | 'closest' | null;
 };
 
 export interface CreateIncidentData {
@@ -112,6 +120,7 @@ export async function getIncidentsByUserId(
   resolved_at: Date | null;
   camera_id: string | null;
   first_event_id: string;
+  detection_section: 'farthest' | 'middle' | 'closest' | null;
 }>> {
   const limit = options.limit || 100;
   const conditions: string[] = ['user_id = $1'];
@@ -139,9 +148,14 @@ export async function getIncidentsByUserId(
   }
 
   const sql = `
-    SELECT * FROM incidents 
+    SELECT
+      i.*,
+      e.section AS detection_section
+    FROM incidents i
+    LEFT JOIN events e
+      ON i.first_event_id = e.id
     WHERE ${conditions.join(' AND ')}
-    ORDER BY detected_at DESC 
+    ORDER BY i.detected_at DESC
     LIMIT $${paramCount}
   `;
   params.push(limit);
@@ -166,6 +180,7 @@ export async function getOpenIncidents(
   resolved_at: Date | null;
   camera_id: string | null;
   first_event_id: string;
+  detection_section: 'farthest' | 'middle' | 'closest' | null;
 }>> {
   const conditions: string[] = ["status = 'open'"];
   const params: any[] = [];
@@ -177,9 +192,14 @@ export async function getOpenIncidents(
   }
 
   const sql = `
-    SELECT * FROM incidents 
+    SELECT
+      i.*,
+      e.section AS detection_section
+    FROM incidents i
+    LEFT JOIN events e
+      ON i.first_event_id = e.id
     WHERE ${conditions.join(' AND ')}
-    ORDER BY detected_at DESC 
+    ORDER BY i.detected_at DESC
     LIMIT $${paramCount}
   `;
   params.push(limit);
@@ -204,6 +224,7 @@ export async function getAllIncidents(
   resolved_at: Date | null;
   camera_id: string | null;
   first_event_id: string;
+  detection_section: 'farthest' | 'middle' | 'closest' | null;
 }>> {
   const conditions: string[] = [];
   const params: any[] = [];
@@ -216,9 +237,14 @@ export async function getAllIncidents(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const sql = `
-    SELECT * FROM incidents 
+    SELECT
+      i.*,
+      e.section AS detection_section
+    FROM incidents i
+    LEFT JOIN events e
+      ON i.first_event_id = e.id
     ${whereClause}
-    ORDER BY detected_at DESC 
+    ORDER BY i.detected_at DESC
     LIMIT $${paramCount}
   `;
   params.push(limit);
