@@ -21,6 +21,25 @@ export default function DashboardPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const frameIntervalRef = useRef<number | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
+  const [showIncidentHistory, setShowIncidentHistory] = useState<boolean>(true)
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("watchdog:showIncidentHistory")
+      if (v === null) return
+      setShowIncidentHistory(v === "true")
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("watchdog:showIncidentHistory", String(showIncidentHistory))
+    } catch {
+      // ignore
+    }
+  }, [showIncidentHistory])
 
   // Pass clerkId to the overshoot vision hook for user-specific SMS alerts
   const {
@@ -321,8 +340,18 @@ export default function DashboardPage() {
           <EventMap grid={combinedPersonGrid} isMonitoring={isMonitoring} />
         </div>
 
-        {/* Incidents history table */}
-        <IncidentsPanel isMonitoring={isMonitoring} />
+        {/* Incidents history */}
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowIncidentHistory((v) => !v)}
+            className="px-6 py-2.5 text-xs sm:text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/30 rounded-sm backdrop-blur-sm transition-colors"
+          >
+            {showIncidentHistory ? "Hide Previous Incidents" : "View Previous Incidents"}
+          </button>
+
+          {showIncidentHistory && <IncidentsPanel isMonitoring={isMonitoring} />}
+        </div>
       </div>
     </div>
   )
